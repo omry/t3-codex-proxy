@@ -8,7 +8,10 @@ reviewer conversation. T3 itself stays unmodified.
 Requires Node.js 24+ and an existing Codex CLI installation. Tested with a WSL
 backend. No npm dependencies to install.
 
-## Setup
+## Install
+
+Run these commands in the same environment as T3's backend (inside WSL if you
+use T3's WSL backend):
 
 ```sh
 git clone https://github.com/omry/t3-codex-proxy.git
@@ -17,10 +20,19 @@ cp config.example.json config.local.json
 command -v codex
 ```
 
-1. Set `realCodex` in `config.local.json` to the absolute Codex path printed above.
-2. In T3's Codex provider settings, set **Binary path** to the absolute path of
-   `bin/t3-codex-proxy.mjs` in this checkout.
-3. **Fully quit and reopen T3 Code** to restart its shared app-server.
+1. Edit `config.local.json`. Set `realCodex` to the absolute path printed by
+   `command -v codex`.
+2. Print the wrapper's absolute path:
+
+   ```sh
+   realpath bin/t3-codex-proxy.mjs
+   ```
+
+3. Open T3 Code → **Settings → Providers → Codex**. Select the provider that
+   uses your existing Codex CLI installation.
+4. Record its original **Binary path**, then replace it with the wrapper path
+   from step 2. Keep `realCodex` in the config pointing to the original Codex.
+5. **Fully quit and reopen T3 Code** to restart its shared app-server.
 
 Existing threads then use the wrapper when resumed. Their old history remains.
 To undo the setup, restore the original Binary path and restart T3.
