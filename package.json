@@ -1,0 +1,18 @@
+{
+  "name": "t3-codex-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omry/t3-codex-proxy.git"
+  },
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "bin": { "t3-codex-proxy": "bin/t3-codex-proxy.mjs" },
+  "scripts": {
+    "test": "node --test --test-isolation=none test/*.test.mjs",
+    "smoke:codex": "node scripts/smoke-codex.mjs",
+    "check": "node --check bin/t3-codex-proxy.mjs && node --check src/config.mjs && node --check src/auto-update.mjs && node --check src/policy.mjs && node --check src/framing.mjs && node --check src/mcp-proxy.mjs && node --check src/wrapper.mjs"
+  }
+}

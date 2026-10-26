@@ -1,0 +1,7 @@
+.local/
+.agents/
+.aws/
+.codex/
+config.local.json
+node_modules/
+coverage/
