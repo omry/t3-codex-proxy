@@ -2,12 +2,13 @@
 
 A local workaround for an issue created by T3 Code's orchestration guidance:
 its injected developer instructions and MCP tool descriptions can override
-the user's review workflow. This has forced fresh delegates for re-checks and
-required prior findings in reviews intended to start without them.
+the user's workflow. This has forced fresh delegates for re-checks, required
+prior findings in independent reviews, and replaced bounded PR polling with
+T3 watches that do not preserve the workflow's timeout recovery.
 
-The proxy rewrites that review guidance so your workflow decides when to reuse
-the original reviewer and what context a fresh reviewer receives.
-T3 itself stays unmodified.
+The proxy rewrites those rules so your workflow controls reviews and PR waits.
+Both fixes are enabled by default and can be disabled independently. T3 itself
+stays unmodified.
 
 Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
 [regression report #24877](https://github.com/pingdotgg/t3code/issues/24877), and
@@ -47,20 +48,38 @@ To undo the setup, restore the original Binary path and restart T3.
 
 ## Check the installation
 
-After restarting T3, open a **new conversation using that Codex provider** and
-paste:
+After restarting T3, open a new conversation using that Codex provider and paste:
 
 ```text
-Call orchestrator_capabilities once. Report PASS only if it succeeds and developer
-guidance allows fresh reviews without prior findings and same-reviewer follow-ups.
-Check delegate_task/t3_thread_send for conflicts; absent review guidance is OK.
-Otherwise report FAIL with one short reason. Do not delegate, send messages, or
-change state.
+proxy-check
 ```
 
-**PASS** confirms live instruction delivery and MCP forwarding. It does not
-test actual delegation. If it fails, check the provider's Binary path and fully
-restart T3 before retrying in another new conversation.
+The agent checks the two overrides and reports version compatibility and the T3 connection separately.
+
+## Override configuration
+
+In `config.local.json`:
+
+```json
+{
+  "realCodex": "/absolute/path/to/real/codex",
+  "overrides": {
+    "reviewWorkflow": true,
+    "prWaiting": true
+  }
+}
+```
+
+- `reviewWorkflow`: let the user's workflow choose fresh-review context and
+  reviewer continuity.
+- `prWaiting`: preserve workflow-owned PR polling, deadlines, retry limits,
+  recovery, and evidence. Retain PR linking; use T3 watching when the workflow
+  selects it or specifies no waiting mechanism.
+
+Both default to `true`, including in existing configs without `overrides`.
+Set either to `false` to preserve T3's original guidance for that behavior.
+Unknown override names and non-boolean values are rejected. Restart T3's shared
+app-server after changing config; existing conversation history is not scrubbed.
 
 ## Codex updates
 
@@ -76,11 +95,11 @@ npm run check
 npm test
 ```
 
-Fixes are selected automatically from T3's initialization version. Matching
-ranges can be open-ended; official support covers only the
-[tested versions](docs/usage.md#versions). Untested versions can still receive
-a matching fix. Changes to T3 may require proxy updates; repeat the installation
-check after upgrading.
+Fixes are selected automatically from T3's initialization version. Newer
+nightlies and stable releases use the latest open-ended range and are assumed
+compatible. [Exact-version test coverage](docs/usage.md#versions) is recorded
+separately; missing coverage does not prevent applying the matching fixes.
+Changes to T3 may require proxy updates; repeat the installation check after upgrading.
 See [usage and limitations](docs/usage.md),
 [verification](docs/verification.md), and the [rewrite policy](src/policy.mjs).
 

@@ -52,7 +52,7 @@ async function launchIsolatedPublic(t, realCodex, args = ['app-server'], config 
   await mkdir(path.join(root, 'bin'), { recursive: true });
   await mkdir(path.join(root, 'src'), { recursive: true });
   for (const file of ['bin/t3-codex-proxy.mjs', 'src/config.mjs', 'src/framing.mjs',
-    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/compatibility.mjs', 'src/wrapper.mjs']) {
+    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/compatibility.mjs', 'src/diagnostics.mjs', 'src/wrapper.mjs']) {
     await copyFile(file, path.join(root, file));
   }
   await chmod(path.join(root, 'bin/t3-codex-proxy.mjs'), 0o755);
@@ -111,6 +111,30 @@ test('binary launches fake app-server; developer rewrite, compaction and interle
   peer.child.stdin.end();
   assert.equal((await peer.exit).code, 0);
   assert.ok(!peer.stderr().includes('private-prompt-marker'));
+});
+
+test('public binary loads independent overrides from its local config', { timeout: 10000 }, async t => {
+  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) {
+    const peer = await launchIsolatedPublic(t, fake, ['app-server'], { realCodex: fake, overrides: { reviewWorkflow, prWaiting } });
+    peer.child.stdin.end([
+      { id: 0, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: fixture.sourceVersion.slice(1) } } },
+      { id: 1, method: 'turn/start', params: { additionalContext: {
+        t3_code_orchestration_01: { kind: 'application', value: fixture.context },
+        t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions },
+      } } },
+      { id: 2, method: 'thread/inject_items', params: { items: [{ type: 'message', role: 'developer', content: [
+        { type: 'input_text', text: `<t3_code_runtime>${fixture.pullRequestInstructions}</t3_code_runtime>` },
+      ] }] } },
+    ].map(message => JSON.stringify(message)).join('\n') + '\n');
+    const result = await peer.exit;
+    assert.equal(result.code, 0);
+    const replies = result.stdout.trim().split('\n').map(JSON.parse);
+    const context = replies.find(x => x.id === 1).result.received.params.additionalContext;
+    assert.equal(context.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE), reviewWorkflow);
+    assert.equal(context.t3_code_runtime.value !== fixture.pullRequestInstructions, prWaiting);
+    assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[0].text,
+      `<t3_code_runtime>${context.t3_code_runtime.value}</t3_code_runtime>`);
+  }
 });
 
 test('wrapper-owned MCP proxy is used by child and closes with child', { timeout: 10000 }, async t => {

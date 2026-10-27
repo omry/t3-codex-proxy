@@ -31,7 +31,7 @@ export function rewriteClientMessage(message, proxy, report, policy) {
 }
 
 export async function runWrapper({ realCodex, args, input = process.stdin, output = process.stdout,
-  stderr = process.stderr, report = () => {} }) {
+  stderr = process.stderr, report = () => {}, overrides }) {
   const appServer = args[0] === 'app-server';
   const subcommands = ['generate-ts', 'generate-json-schema', 'help', 'daemon', 'proxy'];
   const passThrough = !appServer || args.some(x => subcommands.includes(x) || ['--help', '-h', '--print-startup-config'].includes(x));
@@ -52,12 +52,12 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
   let signalled;
   let policy;
   let initialized = false;
-  const currentPolicy = () => policy ??= createPolicy(undefined, report);
+  const currentPolicy = () => policy ??= createPolicy(undefined, report, overrides);
   const rewrite = message => {
     if (message?.method === 'initialize' && !initialized) {
       initialized = true;
       const client = message.params?.clientInfo;
-      policy = createPolicy(client?.name === 'T3 Code' ? client.version : undefined, report);
+      policy = createPolicy(client?.name === 'T3 Code' ? client.version : undefined, report, overrides);
     }
     return rewriteClientMessage(message, proxy, report, currentPolicy());
   };
@@ -93,6 +93,7 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
   }));
   try {
     if (!passThrough) proxy = await startMcpProxy({ report,
+      diagnostics: () => currentPolicy().diagnostics(),
       rewriteToolsList: message => currentPolicy().rewriteToolsList(message) });
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     await assertNotRecursive(realCodex);
