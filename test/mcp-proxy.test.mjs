@@ -9,6 +9,18 @@ import { REVIEW_GUIDANCE } from '../src/policy.mjs';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
 const listed = id => ({ jsonrpc: '2.0', id, result: { tools: [{ name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object' } }] } });
 
+function decodeCompleteEvent(bytes) {
+  const text = bytes.toString('utf8');
+  const body = text.startsWith('\ufeff') ? text.slice(1) : text;
+  const lines = body.split(/\r\n|\r|\n/);
+  if (lines.length < 3 || lines.at(-1) !== '' || lines.at(-2) !== '') return null;
+  const fields = lines.slice(0, -2);
+  const id = fields.find(line => line.startsWith('id:'))?.slice(3).trim() ?? null;
+  const data = fields.filter(line => line.startsWith('data:') || line === 'data')
+    .map(line => line.slice(4).replace(/^: ?/, '')).join('\n');
+  return { id, message: JSON.parse(data) };
+}
+
 async function setup(t, handler) {
   const received = [];
   const server = http.createServer(async (request, response) => {
@@ -82,6 +94,58 @@ test('SSE list rewrites metadata and preserves progress events and event ids', a
   assert.ok(raw.includes(REVIEW_GUIDANCE));
 });
 
+test('HTTP SSE rewrites a fragmented BOM-prefixed CR-only list event', async t => {
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const { url } = await setup(t, (_req, res, body) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const raw = Buffer.concat([bom, Buffer.from(`id: http-cr\r\ndata: ${JSON.stringify(listed(body.id))}\r\r`)]);
+    for (const byte of raw) res.write(Buffer.from([byte]));
+    res.end();
+  });
+  const bytes = Buffer.from(await (await post(url, { id: 22, method: 'tools/list' })).arrayBuffer());
+  const raw = bytes.toString();
+  assert.ok(raw.includes(REVIEW_GUIDANCE));
+  assert.equal(raw.includes(fixture.delegate_task), false);
+  assert.ok(raw.includes('id: http-cr'));
+  assert.deepEqual(bytes.subarray(0, 3), bom);
+});
+
+test('HTTP SSE delivers a mixed interleaved list event before the upstream closes', async t => {
+  let releaseUpstream;
+  const waitToClose = new Promise(resolve => { releaseUpstream = resolve; });
+  const { url } = await setup(t, async (_req, res, body) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const response = JSON.stringify(listed(body.id));
+    const splitAt = response.indexOf(',"result"') + 1;
+    res.write(Buffer.from(`event: message\rid: live-mixed\rcomment: before\rdata:${response.slice(0, splitAt)}\rretry: 1\rdata:${response.slice(splitAt)}\n\n`));
+    await waitToClose;
+    res.end();
+  });
+  const response = await post(url, { id: 23, method: 'tools/list' });
+  const reader = response.body.getReader();
+  const readWithTimeout = () => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for live SSE metadata')), 1000);
+    reader.read().then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+  let bytes = Buffer.alloc(0);
+  try {
+    let decoded;
+    while (!decoded) {
+      const { value, done } = await readWithTimeout();
+      assert.equal(done, false, 'upstream closed before rewritten metadata arrived');
+      bytes = Buffer.concat([bytes, Buffer.from(value)]);
+      decoded = decodeCompleteEvent(bytes);
+    }
+    assert.equal(decoded.id, 'live-mixed');
+    const description = decoded.message.result.tools[0].description;
+    assert.ok(description.includes(REVIEW_GUIDANCE));
+    assert.equal(description.includes(fixture.delegate_task), false);
+  } finally {
+    releaseUpstream();
+  }
+  while (!(await reader.read()).done) { /* Drain after the upstream closes. */ }
+});
+
 test('concurrent lists and calls with equal IDs remain isolated across credentials and sessions', async t => {
   const { url } = await setup(t, async (req, res, body) => {
     await new Promise(resolve => setTimeout(resolve, req.headers.authorization.endsWith('a') ? 20 : 5));
@@ -123,6 +187,29 @@ test('GET SSE carries a pending list response after POST 202', async t => {
   assert.equal((await post(url, { id: 9, method: 'tools/list' })).status, 202);
   const response = await fetch(url, { headers: { authorization: 'Bearer test-secret', 'mcp-session-id': 'session-1', 'last-event-id': 'resume-id' } });
   assert.ok((await response.text()).includes(REVIEW_GUIDANCE));
+});
+
+test('replayed list responses stay rewritten until session deletion or request-ID reuse', async t => {
+  const { url, received } = await setup(t, (req, res) => {
+    if (req.method === 'POST') { res.writeHead(202); return res.end(); }
+    if (req.method === 'DELETE') { res.writeHead(204); return res.end(); }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.end(`id: replay-9\ndata: ${JSON.stringify(listed(9))}\n\n`);
+  });
+  const get = async () => (await fetch(url, { headers: {
+    authorization: 'Bearer test-secret', 'mcp-session-id': 'session-1', 'last-event-id': 'before-9',
+  } })).text();
+  await (await post(url, { id: 9, method: 'tools/list' })).text();
+  assert.ok((await get()).includes(REVIEW_GUIDANCE));
+  assert.ok((await get()).includes(REVIEW_GUIDANCE));
+  assert.equal(received.at(-1).headers['last-event-id'], 'before-9');
+  await (await post(url, { id: 9, method: 'tools/call' })).text();
+  assert.ok(!(await get()).includes(REVIEW_GUIDANCE));
+  await (await post(url, { id: 9, method: 'tools/list' })).text();
+  await (await fetch(url, { method: 'DELETE', headers: {
+    authorization: 'Bearer test-secret', 'mcp-session-id': 'session-1',
+  } })).text();
+  assert.ok(!(await get()).includes(REVIEW_GUIDANCE));
 });
 
 test('stream tool output passes through before the upstream closes', async t => {

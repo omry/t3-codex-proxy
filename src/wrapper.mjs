@@ -1,10 +1,21 @@
 import { spawn } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { constants as osConstants } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { JsonLines } from './framing.mjs';
 import { rewriteDeveloperContext } from './policy.mjs';
 import { startMcpProxy } from './mcp-proxy.mjs';
-import { autoUpdateCodex } from './auto-update.mjs';
+
+const WRAPPER_PATH = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
+
+async function assertNotRecursive(realCodex) {
+  try {
+    if (await realpath(realCodex) === await realpath(WRAPPER_PATH)) throw new Error('recursive_wrapper');
+  } catch (error) {
+    if (error.message === 'recursive_wrapper') throw error;
+  }
+}
 
 export function rewriteClientMessage(message, proxy, report) {
   rewriteDeveloperContext(message, report);
@@ -19,7 +30,7 @@ export function rewriteClientMessage(message, proxy, report) {
   return message;
 }
 
-export async function runWrapper({ realCodex, autoUpdate = false, args, input = process.stdin, output = process.stdout,
+export async function runWrapper({ realCodex, args, input = process.stdin, output = process.stdout,
   stderr = process.stderr, report = () => {} }) {
   const appServer = args[0] === 'app-server';
   const subcommands = ['generate-ts', 'generate-json-schema', 'help', 'daemon', 'proxy'];
@@ -39,15 +50,23 @@ export async function runWrapper({ realCodex, autoUpdate = false, args, input = 
   let eofTimer;
   let killTimer;
   let signalled;
-  const updateAbort = new AbortController();
-  const stop = signal => {
-    signalled ??= signal;
-    updateAbort.abort();
-    child?.kill(signal);
+  const ownGroup = !passThrough && process.platform !== 'win32';
+  const sendSignal = signal => {
+    if (!child?.pid) return;
+    if (ownGroup) {
+      try { process.kill(-child.pid, signal); } catch { /* Already exited. */ }
+    } else child.kill(signal);
+  };
+  const terminate = signal => {
+    sendSignal(signal);
     if (child) {
-      killTimer ??= setTimeout(() => child?.kill('SIGKILL'), 2000);
+      killTimer ??= setTimeout(() => sendSignal('SIGKILL'), 2000);
       killTimer.unref();
     }
+  };
+  const stop = signal => {
+    signalled ??= signal;
+    terminate(signal);
   };
   const onTerm = () => stop('SIGTERM');
   const onInt = () => stop('SIGINT');
@@ -62,11 +81,16 @@ export async function runWrapper({ realCodex, autoUpdate = false, args, input = 
     stop('SIGTERM');
   }));
   try {
-    if (autoUpdate && !passThrough) await autoUpdateCodex({ realCodex, report, signal: updateAbort.signal });
-    if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     if (!passThrough) proxy = await startMcpProxy({ report });
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
-    child = spawn(realCodex, args, { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    await assertNotRecursive(realCodex);
+    if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
+    child = spawn(realCodex, args, { detached: ownGroup, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    // A launcher can exit while descendants still hold its stdio pipes open.
+    // Close that owned group too; do not wait forever for the 'close' event.
+    child.once('exit', () => { if (ownGroup) terminate('SIGTERM'); });
+    // Observe spawn failures before starting forwarding work so outer callers
+    // can emit only the fixed diagnostic.
     const exited = new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal }));
@@ -93,7 +117,7 @@ export async function runWrapper({ realCodex, autoUpdate = false, args, input = 
     clearTimeout(killTimer);
     process.off('SIGTERM', onTerm);
     process.off('SIGINT', onInt);
-    if (child?.exitCode === null && child?.signalCode === null) child.kill('SIGKILL');
+    if (ownGroup || (child?.exitCode === null && child?.signalCode === null)) sendSignal('SIGKILL');
     await proxy?.close();
   }
 }

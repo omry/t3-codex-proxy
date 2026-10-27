@@ -1,6 +1,7 @@
 import { Transform } from 'node:stream';
 
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 // Preserve the exact bytes for all frames whose parsed contents do not change.
 export function rewriteJsonBytes(bytes, rewrite) {
@@ -51,23 +52,34 @@ export class SseRewrite extends Transform {
     this.pending = Buffer.alloc(0);
     this.scan = 0;
     this.lineStart = 0;
+    this.atStreamStart = true;
+    this.skipLf = false;
+    this.afterEventCr = false;
   }
   event(bytes) {
-    const raw = bytes.toString('utf8');
-    const lines = raw.split(/\r\n|\r|\n/);
-    const data = lines.filter(line => line.startsWith('data:') || line === 'data')
-      .map(line => line.slice(4).replace(/^: ?/, '')).join('\n');
+    const hasLeadingBom = this.atStreamStart && bytes.subarray(0, UTF8_BOM.length).equals(UTF8_BOM);
+    this.atStreamStart = false;
+    const raw = (hasLeadingBom ? bytes.subarray(UTF8_BOM.length) : bytes).toString('utf8');
+    const records = [];
+    let offset = 0;
+    for (const match of raw.matchAll(/\r\n|\r|\n/g)) {
+      records.push({ line: raw.slice(offset, match.index), ending: match[0] });
+      offset = match.index + match[0].length;
+    }
+    if (offset < raw.length) records.push({ line: raw.slice(offset), ending: '' });
+    const isDataLine = line => line.startsWith('data:') || line === 'data';
+    const dataRecords = records.filter(record => isDataLine(record.line));
+    const data = dataRecords.map(({ line }) => line.slice(4).replace(/^: ?/, '')).join('\n');
     if (!data) return bytes;
     const updated = rewriteJsonBytes(Buffer.from(data), this.rewrite).toString('utf8');
     if (updated === data) return bytes;
-    let emitted = false;
-    const eol = raw.includes('\r\n') ? '\r\n' : raw.includes('\r') ? '\r' : '\n';
-    return Buffer.from(lines.flatMap(line => {
-      if (!line.startsWith('data:') && line !== 'data') return [line];
-      if (emitted) return [];
-      emitted = true;
-      return [`data: ${updated}`];
-    }).join(eol));
+    const lastDataIndex = records.findLastIndex(record => isDataLine(record.line));
+    const rewritten = Buffer.from(records.map((record, index) => {
+      if (!isDataLine(record.line)) return record.line + record.ending;
+      if (index !== lastDataIndex) return '';
+      return `data: ${updated}${record.ending}`;
+    }).join(''));
+    return hasLeadingBom ? Buffer.concat([UTF8_BOM, rewritten]) : rewritten;
   }
   _transform(chunk, _encoding, callback) {
     try {
@@ -76,18 +88,43 @@ export class SseRewrite extends Transform {
       // lone CR, lone LF and mixed line endings within the same stream.
       while (this.scan < this.pending.length) {
         const byte = this.pending[this.scan];
+        if (this.afterEventCr) {
+          if (byte === 10) {
+            this.push(this.pending.subarray(0, 1));
+            this.pending = this.pending.subarray(1);
+            this.scan = 0;
+            this.lineStart = 0;
+            this.afterEventCr = false;
+            this.skipLf = false;
+            continue;
+          }
+          this.afterEventCr = false;
+          this.skipLf = false;
+        }
+        if (this.skipLf) {
+          if (byte === 10) {
+            this.scan++;
+            this.lineStart++;
+            this.skipLf = false;
+            continue;
+          }
+          this.skipLf = false;
+        }
         if (byte !== 13 && byte !== 10) { this.scan++; continue; }
-        if (byte === 13 && this.scan + 1 === this.pending.length) break;
-        const end = this.scan + (byte === 13 && this.pending[this.scan + 1] === 10 ? 2 : 1);
+        const end = this.scan + 1;
         if (this.scan === this.lineStart) {
+          if (this.lineStart > this.maxBytes) throw new Error('frame_too_large');
           this.push(this.event(this.pending.subarray(0, this.lineStart)));
           this.push(this.pending.subarray(this.lineStart, end));
           this.pending = this.pending.subarray(end);
           this.scan = 0;
           this.lineStart = 0;
+          this.afterEventCr = byte === 13;
+          this.skipLf = byte === 13;
         } else {
           this.scan = end;
           this.lineStart = end;
+          this.skipLf = byte === 13;
         }
       }
       if (this.pending.length > this.maxBytes) throw new Error('frame_too_large');
@@ -95,8 +132,10 @@ export class SseRewrite extends Transform {
     } catch (error) { callback(error); }
   }
   _flush(callback) {
-    // An unterminated SSE event is not dispatched by the protocol. Preserve it.
-    if (this.pending.length) this.push(this.pending);
-    callback();
+    try {
+      // An unterminated SSE event is not dispatched by the protocol. Preserve it.
+      if (this.pending.length) this.push(this.pending);
+      callback();
+    } catch (error) { callback(error); }
   }
 }

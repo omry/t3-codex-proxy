@@ -27,59 +27,16 @@ already stored in an older conversation can remain alongside the new guidance.
 A fresh conversation was used for validation to check delivery without that
 older context.
 
-## Optional Codex auto-update
+## Codex updates
 
-`autoUpdate` defaults to `false`, including when the field is absent from an
-existing config. Enable it in `config.local.json` with a JSON boolean:
+The wrapper does not update Codex. Stop T3 Code so its shared app-server is no
+longer running, update Codex with the package manager used by the installation,
+then reopen T3 Code. This keeps package-manager ownership and configuration in
+the installation that provided Codex.
 
-```json
-{
-  "realCodex": "/absolute/path/to/real/codex",
-  "autoUpdate": true
-}
-```
-
-When enabled, the wrapper makes one npm install attempt **before each new stdio
-app-server starts**, targeting `@openai/codex@latest`. It waits for that attempt
-before launching Codex, so successful updates take effect in the new process.
-This can delay startup. T3 normally shares a long-lived app-server, so a new
-conversation or turn does not itself trigger another update. There is no
-periodic background updater. `--version`, help, and app-server tooling commands
-never trigger an update.
-
-The supported updater is for **Linux/WSL global npm installations** with a real
-launcher under `<prefix>/lib/node_modules/@openai/codex/bin/codex.js` and npm
-installed under the same prefix. The wrapper resolves the configured executable's
-symlink, checks the package manifests, and runs that prefix's npm CLI using Node:
-
-```text
-npm install -g --prefix <resolved-prefix> --allow-scripts=@openai/codex @openai/codex@latest
-```
-
-It requires util-linux `flock`. A lock at
-`<prefix>/.t3-codex-proxy-update.lock` serializes this proxy's installers for
-the same prefix. The empty lock file can remain after exit; the OS releases
-the lock when its holder exits. No executable is moved into a fake installation
-layout, and no T3 hook or package-manager configuration is changed.
-
-The attempt has a two-minute total timeout, including lock waiting. On timeout
-or cancellation, its process group is terminated, with forced termination after
-two seconds if needed. npm output is discarded so it cannot enter the protocol
-stream or proxy logs. Fixed stderr diagnostics report `auto_update_started`,
-`auto_update_completed`, `auto_update_failed`, `auto_update_timed_out`,
-`auto_update_cancelled`, or `auto_update_unsupported_install`.
-
-An unsupported installation or failed update is reported, then the wrapper
-attempts to start the configured Codex. There is no package rollback or repair:
-if npm leaves a damaged installation, Codex startup can still fail. This updater
-follows npm's `latest` tag and **does not apply T3's version-compatibility checks**.
-Other operating systems, standalone installs, and other package managers are
-not automatically updated.
-
-Set `autoUpdate` back to `false` to disable future automatic attempts. The next
-wrapper process reads the new config. `T3_CODEX_PROXY_REAL_CODEX` still overrides
-only the executable path; the auto-update flag comes from the config file.
-This feature leaves T3's own Update action disabled for the wrapper path.
+`--version`, help, and app-server tooling commands pass through to the
+configured executable. T3's own Update action is unavailable while the custom
+wrapper binary path is configured.
 
 ## Roll back
 
@@ -122,12 +79,16 @@ Likewise, installation does not erase original instructions in an old history.
   HTTP connection headers are normalized for proxying. It requests identity
   encoding; compressed metadata responses are rejected. JSON request bodies,
   buffered metadata responses, and individual stream frames are limited to
-  16 MiB. At most 4,096 unresolved list requests are tracked per wrapper.
+  16 MiB. At most 4,096 list request IDs are retained per wrapper for replay;
+  session deletion or reuse of an ID for another method clears its entry.
+  Further new list IDs receive HTTP 503 at the limit; restart the wrapper if
+  the upstream does not delete sessions. Entries are not silently evicted.
 - Tool-call response streams pass through without buffering the whole response.
   Metadata SSE is buffered one event at a time. Changed frames are reserialized;
   unrelated frames retain their bytes. No proxy tool-execution deadline is added.
-- The launcher owns its real Codex child and local listener. On SIGINT/SIGTERM
-  it forwards the signal and escalates after two seconds. After stdin EOF it
+- On Linux/WSL, the launcher owns the real Codex process group and local listener.
+  On SIGINT/SIGTERM it signals the group and escalates after two seconds.
+  Descendants are also stopped when their launcher exits. After stdin EOF it
   allows two seconds for graceful exit, then signals the child, then escalates
   after two more seconds. SIGKILL of the wrapper cannot run this cleanup.
 

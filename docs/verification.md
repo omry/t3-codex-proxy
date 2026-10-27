@@ -7,9 +7,10 @@ these results.
 
 ## Automated checks
 
-The complete suite has **41 passing tests, 0 failed, 0 skipped**. Syntax checks
-also pass. Tests use local fake peers and fake package installations; they do
-not update the real Codex installation or call a paid model endpoint.
+The complete-suite count is intentionally omitted for this repair. Focused
+config/wrapper tests and syntax checks use local fake peers and installed fake
+Codex layouts; they do not update the real Codex installation or call a paid
+model endpoint.
 
 Coverage includes:
 
@@ -19,18 +20,23 @@ Coverage includes:
 - MCP endpoint overrides on start/resume/fork, nested config, authentication and
   timeout preservation, and config-less resume behavior.
 - NDJSON and SSE framing, split UTF-8, mixed line endings, comments, event IDs,
-  progress events, malformed data, and frame limits.
+  progress events, malformed data, frame limits, complete CR-only EOF events,
+  incomplete lines, split CRLF, live CR/mixed-interleaved delivery before upstream close,
+  semantic complete-event decoding, interleaved data fields, stream-leading BOM handling,
+  and opaque results.
 - HTTP initialize/list/call/delete, session and protocol headers, pagination
   arguments, opaque tool results, authentication errors, and sanitized failures.
 - Concurrent requests across credentials/sessions, list replies on GET streams,
   streamed tool output, response-header correction, and active-stream shutdown.
 - Stateless clients reusing the same request ID and credential on concurrent
   POSTs: each list response is matched to its own originating request.
+- Replayed GET list responses, request-ID reuse, and session deletion.
+- Complete and fragmented oversized SSE events, plus multiple small events.
 - Executable passthrough, interleaved approval messages, exit codes, signals,
-  EOF escalation, and listener cleanup.
-- Missing/false auto-update defaults, strict boolean config, executable override,
-  npm prefix resolution, unsupported layouts, update-before-start ordering,
-  failure, installer output isolation, locking, timeout, and cancellation.
+  EOF escalation, listener cleanup, and npm-style launcher descendants.
+- Legacy unknown config properties, executable override, direct launch through
+  an installed fake global layout, read-only prefixes, candidate-layout spawn
+  failures, fixed diagnostics, and output privacy.
 
 The guidance fixture and original matcher strings were derived from the
 T3 release's orchestration instructions and orchestrator tool descriptions.
@@ -43,7 +49,7 @@ npm run smoke:codex -- /absolute/path/to/real/codex
 ```
 
 This starts the actual Codex CLI through the wrapper using a temporary Codex
-home, workspace, and config with `autoUpdate: false`. Fake local servers supply
+home, workspace, and an isolated config. Fake local servers supply
 MCP metadata and model responses.
 
 Verified:
@@ -92,9 +98,9 @@ The reinjection test exercises the RPC used after compaction, without forcing
 automatic compaction. Delivery does not guarantee that a model follows the
 policy in every case. Complete removal of all developer messages is untested.
 
-Auto-update tests use fake npm installations only. No real package upgrade was
-run. The proxy updater does not apply T3's compatibility manifest, and T3's own
-Update action remains unavailable with a custom wrapper binary path.
+Codex package updates are manual: stop T3 Code, use the installation's normal
+package manager, and reopen T3. T3's own Update action remains unavailable
+with a custom wrapper binary path.
 
 The live capability response omitted the Codex provider's `runtimeModes` field.
 That limits validation of explicitly requested child runtime modes. It is a
@@ -103,5 +109,5 @@ separate upstream metadata gap; the proxy preserves capability results.
 During publication checks, the real-Codex smoke exposed a request-ID collision
 between two stateless MCP connections. A regression test reproduced the missing
 rewrite before the fix. POST replies are now matched to their own request,
-while GET-stream replies use the pending-request lookup. This fixes the
+while GET-stream replies use a retained request-ID lookup for reconnect replay. This fixes the
 underlying response filtering rather than relaxing the smoke assertion.

@@ -37,12 +37,33 @@ command -v codex
 Existing threads then use the wrapper when resumed. Their old history remains.
 To undo the setup, restore the original Binary path and restart T3.
 
+## Check the installation
+
+After restarting T3, open a **new conversation using that Codex provider** and
+paste:
+
+```text
+Call orchestrator_capabilities exactly once. Inspect the live delegate_task and
+t3_thread_send tool descriptions, and summarize the developer review guidance.
+Report PASS only if the call succeeds, both descriptions say "Let the user's
+review workflow determine review context and reviewer continuity", and the
+developer guidance agrees: fresh reviews omit earlier findings unless requested;
+same-reviewer follow-ups use childThreadId. Otherwise report FAIL and explain
+what differs or could not be checked. Do not create agents, send messages, or
+change files or settings. Include the capability-call outcome and matching
+excerpts from both tool descriptions as evidence.
+```
+
+**PASS** confirms live instruction delivery and MCP forwarding. It does not
+test actual delegation. If it fails, check the provider's Binary path and fully
+restart T3 before retrying in another new conversation.
+
 ## Codex updates
 
 T3's built-in Codex update action is unavailable with a custom wrapper path.
-Optional Linux/npm auto-update runs before app-server startup; enable it with
-`"autoUpdate": true`. It defaults to `false` and does not apply T3's version
-compatibility checks. [Details](docs/usage.md#optional-codex-auto-update).
+Stop T3 Code, update Codex with the package manager used by its installation,
+then reopen T3 Code. `--version`, help, and tooling commands pass through to
+the configured Codex executable.
 
 ## Checks
 
@@ -51,8 +72,10 @@ npm run check
 npm test
 ```
 
-The filter matches known wording rather than a specific T3 version. Changed
-wording may require an update. See [usage and limitations](docs/usage.md),
+Changes to T3 Code's instructions or protocols may require patches or updates
+to this proxy. Repeat the installation check after updating T3. The filter
+matches known wording rather than a specific T3 version.
+See [usage and limitations](docs/usage.md),
 [verification](docs/verification.md), and the [rewrite policy](src/policy.mjs).
 
 Independent project. [MIT](LICENSE); [third-party notices](THIRD_PARTY_NOTICES.md).

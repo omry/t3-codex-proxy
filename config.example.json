@@ -1,4 +1,3 @@
 {
-  "realCodex": "/absolute/path/to/real/codex",
-  "autoUpdate": false
+  "realCodex": "/absolute/path/to/real/codex"
 }

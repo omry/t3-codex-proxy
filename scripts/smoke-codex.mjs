@@ -59,9 +59,9 @@ const server = http.createServer(async (request, response) => {
 
 try {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
-  // Pin autoUpdate off in a temporary config even if the live config enables it.
+  // Use a temporary config so the smoke never reads or changes the live config.
   const wrapperConfig = path.join(root, 'wrapper-config.json');
-  await writeFile(wrapperConfig, JSON.stringify({ realCodex, autoUpdate: false }));
+  await writeFile(wrapperConfig, JSON.stringify({ realCodex }));
   child = spawn(process.execPath, [fileURLToPath(new URL('../test/fixtures/run-configured-wrapper.mjs', import.meta.url)), wrapperConfig, 'app-server'], {
     cwd: workspace,
     env: { ...process.env, CODEX_HOME: home, T3_CODEX_PROXY_REAL_CODEX: realCodex },

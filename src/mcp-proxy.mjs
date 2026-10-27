@@ -35,9 +35,9 @@ export async function startMcpProxy({ report = () => {} } = {}) {
   const byUpstream = new Map();
   const upstreamRequests = new Set();
   const sockets = new Set();
-  // Track tools/list response IDs per route, credential and MCP session. A result
-  // may arrive on a GET event stream instead of its originating POST stream.
-  const pendingLists = new Set();
+  // Retain tools/list response IDs for GET delivery and reconnect replay. A
+  // successful delivery does not prove the client received the complete event.
+  const listRequests = new Set();
   const sessionKey = (route, auth, session) => JSON.stringify([route, auth ?? null, session ?? null]);
   const listKey = (session, id) => JSON.stringify([session, id]);
 
@@ -54,22 +54,26 @@ export async function startMcpProxy({ report = () => {} } = {}) {
       const body = await readBounded(request);
       let parsed;
       try { parsed = JSON.parse(body.toString('utf8')); } catch { /* Forward opaque bodies. */ }
-      if (request.method === 'POST' && parsed?.method === 'tools/list' &&
+      if (request.method === 'POST' && typeof parsed?.method === 'string' &&
           (typeof parsed.id === 'string' || typeof parsed.id === 'number')) {
-        if (pendingLists.size >= 4096) return endError(response, 503, 'too_many_pending_lists');
-        requestKey = listKey(session, parsed.id);
-        pendingLists.add(requestKey);
+        const key = listKey(session, parsed.id);
+        if (parsed.method === 'tools/list') {
+          if (!listRequests.has(key) && listRequests.size >= 4096) return endError(response, 503, 'too_many_list_ids');
+          requestKey = key;
+          listRequests.add(key);
+        } else {
+          // Do not classify a later tool result as metadata if its ID is reused.
+          listRequests.delete(key);
+        }
       }
       const rewrite = message => {
         if (!message || typeof message !== 'object' || message.method || !Object.hasOwn(message, 'id')) return message;
         const key = listKey(session, message.id);
         // A POST response belongs to this request even when another stateless
-        // connection reused its ID and already consumed the shared GET lookup.
-        // Only GET streams need the cross-request pending-list registry.
+        // connection reused its ID. Only GET streams need the shared registry.
         if (request.method === 'POST') {
           if (requestKey === undefined || message.id !== parsed.id) return message;
-        } else if (!pendingLists.has(key)) return message;
-        pendingLists.delete(key);
+        } else if (!listRequests.has(key)) return message;
         return rewriteToolsList(message, report);
       };
       const headers = headersWithoutHopByHop(request.headers);
@@ -88,7 +92,6 @@ export async function startMcpProxy({ report = () => {} } = {}) {
       });
       upstream.end(body);
       const incoming = await received;
-      if (requestKey && incoming.statusCode >= 400) pendingLists.delete(requestKey);
       const outputHeaders = headersWithoutHopByHop(incoming.headers);
       const contentType = String(incoming.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
       const inspect = requestKey !== undefined || request.method === 'GET';
@@ -121,10 +124,9 @@ export async function startMcpProxy({ report = () => {} } = {}) {
         await pipeline(incoming, response);
       }
       if (request.method === 'DELETE' && incoming.statusCode < 300) {
-        for (const key of pendingLists) if (JSON.parse(key)[0] === session) pendingLists.delete(key);
+        for (const key of listRequests) if (JSON.parse(key)[0] === session) listRequests.delete(key);
       }
     } catch (error) {
-      if (requestKey) pendingLists.delete(requestKey);
       upstream?.destroy();
       report('mcp_forward_failed');
       endError(response, error.message === 'frame_too_large' ? 413 : 502, 'mcp_forward_failed');
@@ -161,7 +163,7 @@ export async function startMcpProxy({ report = () => {} } = {}) {
       for (const request of upstreamRequests) request.destroy();
       for (const socket of sockets) socket.destroy();
       await new Promise(resolve => server.close(resolve));
-      pendingLists.clear();
+      listRequests.clear();
     },
   };
 }

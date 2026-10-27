@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import { chmod, copyFile, mkdir, mkdtemp, symlink, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
 import { REVIEW_GUIDANCE } from '../src/policy.mjs';
@@ -40,6 +43,48 @@ function launch(t, args = ['app-server'], realCodex = fake) {
   }
   return { child, exit, waitFor, send: message => child.stdin.write(JSON.stringify(message) + '\n'),
     raw: () => raw, stderr: () => stderr };
+}
+
+async function launchIsolatedPublic(t, realCodex, args = ['app-server'], config = { realCodex, autoUpdate: true }) {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-legacy-public-'));
+  await mkdir(path.join(root, 'bin'), { recursive: true });
+  await mkdir(path.join(root, 'src'), { recursive: true });
+  for (const file of ['bin/t3-codex-proxy.mjs', 'src/config.mjs', 'src/framing.mjs',
+    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/wrapper.mjs']) {
+    await copyFile(file, path.join(root, file));
+  }
+  await chmod(path.join(root, 'bin/t3-codex-proxy.mjs'), 0o755);
+  await writeFile(path.join(root, 'config.local.json'), JSON.stringify(config));
+  const child = spawn(process.execPath, [path.join(root, 'bin/t3-codex-proxy.mjs'), ...args], {
+    cwd: root, env: { ...process.env, T3_CODEX_PROXY_REAL_CODEX: '' }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '', stderr = '', closed = false;
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const exit = new Promise(resolve => child.once('close', (code, signal) => {
+    closed = true; resolve({ code, signal, stdout, stderr });
+  }));
+  t.after(async () => {
+    if (!closed) child.kill('SIGKILL');
+    await exit;
+    await rm(root, { recursive: true, force: true });
+  });
+  return { child, exit };
+}
+
+async function fakeGlobalInstallation(t) {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-legacy-install-'));
+  const prefix = path.join(root, 'node with spaces');
+  const codex = path.join(prefix, 'lib/node_modules/@openai/codex');
+  await mkdir(path.join(codex, 'bin'), { recursive: true });
+  await mkdir(path.join(prefix, 'bin'), { recursive: true });
+  const entry = path.join(codex, 'bin/codex.js');
+  await copyFile(fake, entry);
+  await chmod(entry, 0o755);
+  const binary = path.join(prefix, 'bin/codex');
+  await symlink(entry, binary);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  return { root, prefix, binary };
 }
 
 test('binary launches fake app-server; developer rewrite, compaction and interleaved approval remain correct', { timeout: 10000 }, async t => {
@@ -96,6 +141,39 @@ test('version and non-app-server exit codes pass through', { timeout: 10000 }, a
   assert.equal((await error.exit).code, 23);
 });
 
+test('legacy updater settings do not affect an installed public launch or read-only prefix', { timeout: 10000 }, async t => {
+  const install = await fakeGlobalInstallation(t);
+  await chmod(install.prefix, 0o555);
+  const peer = await launchIsolatedPublic(t, install.binary, ['app-server'], { realCodex: install.binary, autoUpdate: true });
+  peer.child.stdin.end('{"id":1,"method":"legacy-config"}\n');
+  const result = await peer.exit;
+  await chmod(install.prefix, 0o755);
+  assert.equal(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).result.loadedVersion, 'codex-cli fake');
+  await assert.rejects(readFile(path.join(install.prefix, 'updates.jsonl')), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(install.prefix, '.t3-codex-proxy-update.lock')), { code: 'ENOENT' });
+});
+
+test('candidate-layout spawn failures stay fixed and private', { timeout: 10000 }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-candidate-failures-'));
+  const prefix = path.join(root, 'prefix');
+  const denied = path.join(prefix, 'bin', 'denied-private-marker');
+  const missing = path.join(prefix, 'bin', 'missing-private-marker');
+  await mkdir(path.dirname(denied), { recursive: true });
+  await writeFile(denied, '#!/usr/bin/env node\n');
+  await chmod(denied, 0o644);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const realCodex of [denied, missing]) {
+    const peer = await launchIsolatedPublic(t, realCodex, ['app-server', '--secret=private-marker'], { realCodex, autoUpdate: true });
+    peer.child.stdin.end();
+    const result = await peer.exit;
+    assert.equal(result.code, 1);
+    assert.equal(result.stderr, 't3-codex-proxy: startup_or_protocol_failed\n');
+    assert.ok(!result.stderr.includes('private-marker'));
+    assert.ok(!result.stderr.includes('Error:') && !result.stderr.includes('spawnargs'));
+  }
+});
+
 test('invalid transport and missing executable exit cleanly without disclosing parameters', { timeout: 10000 }, async t => {
   const transport = launch(t, ['app-server', '--listen', 'ws://private-marker:9999']);
   assert.equal((await transport.exit).code, 1);
@@ -115,4 +193,57 @@ test('SIGTERM and ignored EOF terminate real child and local proxy', { timeout: 
   ignored.send({ id: 1, method: 'ready' }); await ignored.waitFor(x => x.id === 1);
   ignored.child.stdin.end();
   assert.equal((await ignored.exit).code, 137);
+});
+
+test('app-server shutdown owns npm-style launcher descendants', { timeout: 20000 }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-descendants-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const launcher = path.join(root, 'launcher.mjs');
+  await writeFile(launcher, `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+const child = spawn(process.execPath, ['--input-type=module', '-e',
+  "process.on('SIGTERM',()=>{});console.log(JSON.stringify({pid:process.pid,launcher:process.ppid}));setInterval(()=>{},1000)"],
+  { stdio: ['inherit', 'inherit', 'inherit'] });
+process.on('SIGTERM', () => child.kill('SIGTERM'));
+process.stdin.on('data', () => process.exit(0));
+child.on('exit', () => process.exit());
+`, { mode: 0o755 });
+  const config = path.join(root, 'config.json');
+  await writeFile(config, JSON.stringify({ realCodex: launcher }));
+  for (const trigger of ['signal', 'eof', 'launcher-exit']) {
+    const peer = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/run-configured-wrapper.mjs', import.meta.url)),
+      config, 'app-server'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    peer.stderr.resume();
+    let closed = false, nativePid, launcherPid;
+    const exit = new Promise(resolve => peer.once('close', code => { closed = true; resolve(code); }));
+    t.after(async () => {
+      if (!closed) peer.kill('SIGKILL');
+      for (const pid of [nativePid, launcherPid]) {
+        if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* Already exited. */ } }
+      }
+      await exit;
+    });
+    const ready = await new Promise((resolve, reject) => {
+      let raw = '';
+      const timer = setTimeout(() => reject(new Error('launcher readiness timeout')), 3000);
+      peer.stdout.on('data', chunk => {
+        raw += chunk;
+        if (!raw.includes('\n')) return;
+        clearTimeout(timer); resolve(JSON.parse(raw.trim()));
+      });
+    });
+    nativePid = ready.pid; launcherPid = ready.launcher;
+    if (trigger === 'signal') peer.kill('SIGTERM');
+    else if (trigger === 'eof') peer.stdin.end();
+    else peer.stdin.write('{}\n');
+    let timer;
+    const code = await Promise.race([exit, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${trigger}: descendant prevented shutdown`)), 6500);
+    })]).finally(() => clearTimeout(timer));
+    assert.equal(code, trigger === 'launcher-exit' ? 0 : 137);
+    try {
+      const stat = await readFile(`/proc/${nativePid}/stat`, 'utf8');
+      assert.equal(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0], 'Z');
+    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+  }
 });
