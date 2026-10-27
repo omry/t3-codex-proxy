@@ -1,5 +1,5 @@
-// Selection ranges and tested support are separate. Open ranges deliberately
-// match untested releases; input guards still protect every selected rewrite.
+// Matching ranges define support, including newer releases in open ranges.
+// Exact-version test coverage is separate; input guards protect every rewrite.
 export const FIX_SETS = [
   { id: 'legacy', range: { max: '0.1.3-nightly.20261025.3655' } },
   { id: 'current', range: { min: '0.1.3-nightly.20261025.3669' } },

@@ -32,11 +32,12 @@ test('inclusive open, bounded and exact ranges use semantic version precedence',
   assert.throws(() => matchesVersion('1.2.3', { min: '2.0.0', max: '1.0.0' }), /invalid_version_range/);
 });
 
-test('fix selection and tested support are independent, including open future matching', () => {
+test('supported ranges include newer releases regardless of exact-version test coverage', () => {
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3655'), { fixSet: 'legacy', tested: true });
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3669'), { fixSet: 'current', tested: true });
   assert.deepEqual(selectCompatibility('0.1.3'), { fixSet: 'current', tested: true });
   assert.deepEqual(selectCompatibility('0.0.1'), { fixSet: 'legacy', tested: false });
+  assert.deepEqual(selectCompatibility('0.1.4-nightly.20261027.3783'), { fixSet: 'current', tested: false });
   assert.deepEqual(selectCompatibility('8.0.0'), { fixSet: 'current', tested: false });
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3660'), { fixSet: null, tested: false });
   for (const version of TESTED_VERSIONS) assert.equal(FIX_SETS.filter(fix => matchesVersion(version, fix.range)).length, 1);
@@ -48,7 +49,7 @@ test('fix selection and tested support are independent, including open future ma
   } } };
   policy.rewriteDeveloperContext(message);
   assert.ok(message.params.additionalContext.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE));
-  assert.deepEqual(events, ['t3_fixset_current', 'untested_t3_version', 'guidance_rewritten']);
+  assert.deepEqual(events, ['t3_fixset_current', 'guidance_rewritten']);
 });
 
 for (const fixture of fixtures) {

@@ -3,6 +3,7 @@ import https from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { MAX_FRAME_BYTES, SseRewrite, rewriteJsonBytes } from './framing.mjs';
+import { PROXY_CHECK_TOOL, proxyCheckResult } from './diagnostics.mjs';
 
 function endError(response, status, code) {
   if (response.headersSent) return response.destroy();
@@ -29,14 +30,14 @@ async function readBounded(stream) {
   return Buffer.concat(chunks);
 }
 
-export async function startMcpProxy({ report = () => {}, rewriteToolsList = message => message } = {}) {
+export async function startMcpProxy({ report = () => {}, rewriteToolsList = message => message, diagnostics } = {}) {
   const routes = new Map();
   const byUpstream = new Map();
   const upstreamRequests = new Set();
   const sockets = new Set();
   // Retain tools/list response IDs for GET delivery and reconnect replay. A
   // successful delivery does not prove the client received the complete event.
-  const listRequests = new Set();
+  const listRequests = new Map();
   const sessionKey = (route, auth, session) => JSON.stringify([route, auth ?? null, session ?? null]);
   const listKey = (session, id) => JSON.stringify([session, id]);
 
@@ -50,20 +51,33 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
     const abort = () => upstream?.destroy();
     response.on('close', abort);
     try {
-      const body = await readBounded(request);
+      let body = await readBounded(request);
       let parsed;
       try { parsed = JSON.parse(body.toString('utf8')); } catch { /* Forward opaque bodies. */ }
+      const localCheck = diagnostics && request.method === 'POST' && parsed?.method === 'tools/call' &&
+        (typeof parsed.id === 'string' || typeof parsed.id === 'number') && parsed.params?.name === PROXY_CHECK_TOOL.name;
+      const checkArguments = parsed?.params && Object.hasOwn(parsed.params, 'arguments') ? parsed.params.arguments : {};
+      if (localCheck && (!checkArguments || typeof checkArguments !== 'object' || Array.isArray(checkArguments) ||
+          Object.keys(checkArguments).length > 0)) {
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        return response.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id ?? null,
+          error: { code: -32602, message: 'proxy-check requires empty arguments' } }));
+      }
       if (request.method === 'POST' && typeof parsed?.method === 'string' &&
           (typeof parsed.id === 'string' || typeof parsed.id === 'number')) {
         const key = listKey(session, parsed.id);
-        if (parsed.method === 'tools/list') {
+        if (parsed.method === 'tools/list' || localCheck) {
           if (!listRequests.has(key) && listRequests.size >= 4096) return endError(response, 503, 'too_many_list_ids');
           requestKey = key;
-          listRequests.add(key);
+          listRequests.set(key, localCheck ? 'check' : 'list');
         } else {
           // Do not classify a later tool result as metadata if its ID is reused.
           listRequests.delete(key);
         }
+      }
+      if (localCheck) {
+        // Authorize through T3 using the caller's existing route, credentials and MCP session.
+        body = Buffer.from(JSON.stringify({ ...parsed, method: 'tools/list', params: {} }));
       }
       const rewrite = message => {
         if (!message || typeof message !== 'object' || message.method || !Object.hasOwn(message, 'id')) return message;
@@ -73,12 +87,29 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
         if (request.method === 'POST') {
           if (requestKey === undefined || message.id !== parsed.id) return message;
         } else if (!listRequests.has(key)) return message;
+        const kind = request.method === 'POST' ? (localCheck ? 'check' : 'list') : listRequests.get(key);
+        if (diagnostics && Array.isArray(message.result?.tools)) {
+          if (message.result.tools.some(tool => tool?.name === PROXY_CHECK_TOOL.name)) {
+            report('proxy_check_name_conflict');
+            return { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'proxy_check_name_conflict' } };
+          }
+          if (kind === 'check') {
+            return { jsonrpc: '2.0', id: message.id, result: proxyCheckResult(diagnostics()) };
+          }
+          rewriteToolsList(message, report);
+          if (!message.result.nextCursor) message.result.tools.push(structuredClone(PROXY_CHECK_TOOL));
+          return message;
+        }
         return rewriteToolsList(message, report);
       };
       const headers = headersWithoutHopByHop(request.headers);
       headers.host = route.host;
       // No decompression/recompression: ask the loopback upstream for identity.
       headers['accept-encoding'] = 'identity';
+      if (localCheck) {
+        delete headers['content-md5'];
+        delete headers.digest;
+      }
       if (headers['content-length'] !== undefined) headers['content-length'] = String(body.length);
       upstream = (route.protocol === 'https:' ? https : http).request(route, {
         method: request.method, headers,
@@ -123,7 +154,7 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
         await pipeline(incoming, response);
       }
       if (request.method === 'DELETE' && incoming.statusCode < 300) {
-        for (const key of listRequests) if (JSON.parse(key)[0] === session) listRequests.delete(key);
+        for (const key of listRequests.keys()) if (JSON.parse(key)[0] === session) listRequests.delete(key);
       }
     } catch (error) {
       upstream?.destroy();

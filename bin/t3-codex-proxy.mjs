@@ -12,8 +12,8 @@ function report(code) {
 }
 
 try {
-  const { realCodex } = await loadConfig();
-  process.exitCode = await runWrapper({ realCodex, args: process.argv.slice(2), report });
+  const config = await loadConfig();
+  process.exitCode = await runWrapper({ ...config, args: process.argv.slice(2), report });
 } catch {
   // Do not interpolate an exception: spawn and HTTP errors can contain secrets.
   report('startup_or_protocol_failed');

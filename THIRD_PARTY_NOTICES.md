@@ -1,6 +1,6 @@
 # Third-party notices
 
-The original instruction strings in `src/policy.mjs` and the guidance fixture
+The original review and PR-wait instruction strings in `src/policy.mjs` and the guidance fixture
 in `test/fixtures/t3-guidance.json` are derived from
 [T3 Code](https://github.com/pingdotgg/t3code), release
 `v0.1.3-nightly.20261025.3655`. Additional guidance fixtures derive from
