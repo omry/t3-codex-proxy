@@ -51,16 +51,11 @@ After restarting T3, open a **new conversation using that Codex provider** and
 paste:
 
 ```text
-Call orchestrator_capabilities exactly once. Inspect the live delegate_task and
-t3_thread_send tool descriptions, and summarize the developer review guidance.
-Report PASS only if the call succeeds and the developer guidance lets the user's
-workflow choose review context and continuity: fresh reviews omit earlier findings
-unless requested; same-reviewer follow-ups use childThreadId. Any review guidance
-in the tool descriptions must agree. Newer T3 versions may have no review guidance
-in those descriptions; report that explicitly. Otherwise report FAIL and explain
-what differs or could not be checked. Do not create agents, send messages, or
-change files or settings. Include the capability-call outcome, a summary of the
-developer guidance, and relevant excerpts from both descriptions as evidence.
+Call orchestrator_capabilities once. Report PASS only if it succeeds and developer
+guidance allows fresh reviews without prior findings and same-reviewer follow-ups.
+Check delegate_task/t3_thread_send for conflicts; absent review guidance is OK.
+Otherwise report FAIL with one short reason. Do not delegate, send messages, or
+change state.
 ```
 
 **PASS** confirms live instruction delivery and MCP forwarding. It does not
