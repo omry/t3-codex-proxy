@@ -13,6 +13,6 @@
   "scripts": {
     "test": "node --test --test-isolation=none test/*.test.mjs",
     "smoke:codex": "node scripts/smoke-codex.mjs",
-    "check": "node --check bin/t3-codex-proxy.mjs && node --check src/config.mjs && node --check src/policy.mjs && node --check src/framing.mjs && node --check src/mcp-proxy.mjs && node --check src/wrapper.mjs"
+    "check": "node --check bin/t3-codex-proxy.mjs && node --check src/config.mjs && node --check src/compatibility.mjs && node --check src/policy.mjs && node --check src/framing.mjs && node --check src/mcp-proxy.mjs && node --check src/wrapper.mjs"
   }
 }

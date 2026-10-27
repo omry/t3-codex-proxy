@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { REVIEW_GUIDANCE, rewriteDeveloperContext, rewriteToolsList } from '../src/policy.mjs';
+import { REVIEW_GUIDANCE, createPolicy } from '../src/policy.mjs';
 import { JsonLines, SseRewrite } from '../src/framing.mjs';
 import { rewriteClientMessage } from '../src/wrapper.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
+const { rewriteDeveloperContext, rewriteToolsList } = createPolicy(fixture.sourceVersion.slice(1));
 const context = () => ({ method: 'turn/start', id: 1, params: {
   additionalContext: {
     t3_code_orchestration_01: { kind: 'application', value: fixture.context },
@@ -79,7 +80,9 @@ test('unknown guidance stays unchanged with a content-free warning', () => {
   message.params.additionalContext.t3_code_orchestration_01.value = 'Changed independent review guidance. private-marker';
   const before = structuredClone(message);
   const events = [];
-  rewriteDeveloperContext(message, code => events.push(code));
+  const policy = createPolicy(fixture.sourceVersion.slice(1), code => events.push(code));
+  events.length = 0;
+  policy.rewriteDeveloperContext(message);
   assert.deepEqual(message, before);
   assert.deepEqual(events, ['unrecognized_review_guidance']);
   for (const value of [null, {}, { params: {} }, { method: 'turn/start', params: { additionalContext: [] } }]) {

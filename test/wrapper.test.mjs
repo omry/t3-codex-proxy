@@ -14,7 +14,7 @@ const binary = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.ur
 const fake = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
 
-function launch(t, args = ['app-server'], realCodex = fake) {
+function launch(t, args = ['app-server'], realCodex = fake, t3Version = fixture.sourceVersion.slice(1)) {
   const child = spawn(process.execPath, [binary, ...args], { env: { ...process.env, T3_CODEX_PROXY_REAL_CODEX: realCodex }, stdio: ['pipe', 'pipe', 'pipe'] });
   const messages = [];
   const waiters = new Set();
@@ -30,6 +30,8 @@ function launch(t, args = ['app-server'], realCodex = fake) {
     for (const check of waiters) check();
   });
   child.stderr.on('data', chunk => { stderr += chunk; });
+  if (args[0] === 'app-server') child.stdin.write(JSON.stringify({ id: 'test-initialize', method: 'initialize',
+    params: { clientInfo: { name: 'T3 Code', version: t3Version } } }) + '\n');
   t.after(async () => { if (!closed) { child.kill('SIGKILL'); await exit; } });
   function waitFor(predicate) {
     return new Promise((resolve, reject) => {
@@ -50,7 +52,7 @@ async function launchIsolatedPublic(t, realCodex, args = ['app-server'], config 
   await mkdir(path.join(root, 'bin'), { recursive: true });
   await mkdir(path.join(root, 'src'), { recursive: true });
   for (const file of ['bin/t3-codex-proxy.mjs', 'src/config.mjs', 'src/framing.mjs',
-    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/wrapper.mjs']) {
+    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/compatibility.mjs', 'src/wrapper.mjs']) {
     await copyFile(file, path.join(root, file));
   }
   await chmod(path.join(root, 'bin/t3-codex-proxy.mjs'), 0o755);
@@ -131,6 +133,43 @@ test('wrapper-owned MCP proxy is used by child and closes with child', { timeout
   peer.child.stdin.end(); assert.equal((await peer.exit).code, 0);
   await assert.rejects(fetch(settings.url));
   assert.ok(!peer.stderr().includes('private-token-marker'));
+});
+
+test('concurrent old and current wrappers select independent policies and preserve initialization', { timeout: 10000 }, async t => {
+  const current = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-0.1.3.json', import.meta.url)));
+  await Promise.all([fixture, current].map(async source => {
+    const version = source.sourceVersion.slice(1);
+    const peer = launch(t, ['app-server'], fake, version);
+    const initialize = (await peer.waitFor(x => x.id === 'test-initialize')).result.received;
+    assert.deepEqual(initialize.params.clientInfo, { name: 'T3 Code', version });
+    // A second initialize must not switch this process's selected T3 version.
+    peer.send({ id: 90, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: source === fixture ? '0.1.3' : fixture.sourceVersion.slice(1) } } });
+    await peer.waitFor(x => x.id === 90);
+    peer.send({ id: 91, method: 'turn/start', params: {
+      additionalContext: { t3_code_orchestration_01: { kind: 'application', value: source.context } },
+    } });
+    const turn = (await peer.waitFor(x => x.id === 91)).result.received;
+    assert.ok(turn.params.additionalContext.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE));
+    assert.ok(!peer.stderr().includes('unrecognized_review_guidance'));
+    peer.child.stdin.end();
+    assert.equal((await peer.exit).code, 0);
+  }));
+});
+
+test('missing or invalid T3 version warns and forwards guidance without a legacy fallback', { timeout: 10000 }, async t => {
+  for (const version of [null, 'unknown-private-marker']) {
+    const peer = launch(t, ['app-server'], fake, version);
+    peer.send({ id: 92, method: 'turn/start', params: {
+      additionalContext: { t3_code_orchestration_01: { kind: 'application', value: fixture.context } },
+    } });
+    const turn = (await peer.waitFor(x => x.id === 92)).result.received;
+    assert.equal(turn.params.additionalContext.t3_code_orchestration_01.value, fixture.context);
+    peer.child.stdin.end();
+    assert.equal((await peer.exit).code, 0);
+    assert.ok(peer.stderr().includes('unsupported_t3_version'));
+    assert.ok(peer.stderr().includes('unrecognized_review_guidance'));
+    assert.ok(!peer.stderr().includes('private-marker'));
+  }
 });
 
 test('version and non-app-server exit codes pass through', { timeout: 10000 }, async t => {

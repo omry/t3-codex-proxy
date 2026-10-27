@@ -53,13 +53,14 @@ paste:
 ```text
 Call orchestrator_capabilities exactly once. Inspect the live delegate_task and
 t3_thread_send tool descriptions, and summarize the developer review guidance.
-Report PASS only if the call succeeds, both descriptions say "Let the user's
-review workflow determine review context and reviewer continuity", and the
-developer guidance agrees: fresh reviews omit earlier findings unless requested;
-same-reviewer follow-ups use childThreadId. Otherwise report FAIL and explain
+Report PASS only if the call succeeds and the developer guidance lets the user's
+workflow choose review context and continuity: fresh reviews omit earlier findings
+unless requested; same-reviewer follow-ups use childThreadId. Any review guidance
+in the tool descriptions must agree. Newer T3 versions may have no review guidance
+in those descriptions; report that explicitly. Otherwise report FAIL and explain
 what differs or could not be checked. Do not create agents, send messages, or
-change files or settings. Include the capability-call outcome and matching
-excerpts from both tool descriptions as evidence.
+change files or settings. Include the capability-call outcome, a summary of the
+developer guidance, and relevant excerpts from both descriptions as evidence.
 ```
 
 **PASS** confirms live instruction delivery and MCP forwarding. It does not
@@ -80,9 +81,11 @@ npm run check
 npm test
 ```
 
-Changes to T3 Code's instructions or protocols may require patches or updates
-to this proxy. Repeat the installation check after updating T3. The filter
-matches known wording rather than a specific T3 version.
+Fixes are selected automatically from T3's initialization version. Matching
+ranges can be open-ended; official support covers only the
+[tested versions](docs/usage.md#versions). Untested versions can still receive
+a matching fix. Changes to T3 may require proxy updates; repeat the installation
+check after upgrading.
 See [usage and limitations](docs/usage.md),
 [verification](docs/verification.md), and the [rewrite policy](src/policy.mjs).
 

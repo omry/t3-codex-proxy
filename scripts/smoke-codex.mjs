@@ -17,7 +17,10 @@ const root = await mkdtemp(path.join(tmpdir(), 't3-codex-proxy-smoke-'));
 const home = path.join(root, 'codex-home');
 const workspace = path.join(root, 'workspace');
 await mkdir(home); await mkdir(workspace);
-const fixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
+const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process.argv[3]) :
+  new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
+const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
+const sections = fixture.sections ?? [fixture.context];
 let child;
 let childExit;
 const methods = [];
@@ -95,7 +98,7 @@ try {
     pending.set(requestId, { resolve, reject, timer });
     child.stdin.write(JSON.stringify({ id: requestId, method, params }) + '\n');
   });
-  const initialized = await call('initialize', { clientInfo: { name: 't3-codex-proxy-smoke', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+  const initialized = await call('initialize', { clientInfo: { name: 'T3 Code', version: t3Version }, capabilities: { experimentalApi: true } });
   child.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n');
   const config = { 'model_providers.isolated': {
     name: 'Isolated fake model', base_url: `http://127.0.0.1:${server.address().port}`,
@@ -113,7 +116,9 @@ try {
   for (const name of ['delegate_task', 't3_thread_send']) {
     const tool = t3.tools[name];
     assert.ok(tool, `${name} loaded by real Codex`);
-    if (!tool.description.includes(REVIEW_GUIDANCE)) {
+    if (fixture.toolDescriptionsUnchanged) {
+      assert.equal(tool.description, fixture[name], `${name}: neutral latest description preserved`);
+    } else if (!tool.description.includes(REVIEW_GUIDANCE)) {
       // Only fixture comparisons and fixed event names are safe to disclose.
       await new Promise(resolve => setTimeout(resolve, 20));
       assert.fail(`${name} has unrewritten guidance: ${JSON.stringify({
@@ -136,13 +141,17 @@ try {
     }
     assert.equal(completedTurns.find(turn => turn.id === result.turn.id).status, 'completed');
   };
-  await runTurn({ t3_code_orchestration_01: { kind: 'application', value: fixture.context } });
-  const oldBullet = fixture.context.split('\n').find(line => line.startsWith('- For independent'));
+  await runTurn(Object.fromEntries(sections.map((value, i) =>
+    [`t3_code_orchestration_${String(i + 1).padStart(2, '0')}`, { kind: 'application', value }])));
+  const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
+  assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
   assert.ok(JSON.stringify(modelRequests[0]).includes(REVIEW_GUIDANCE));
   assert.ok(!JSON.stringify(modelRequests[0]).includes(oldBullet));
-  await call('thread/inject_items', { threadId: thread.thread.id, items: [{ type: 'message', role: 'developer',
-    content: [{ type: 'input_text', text: `<t3_code_orchestration_01>${fixture.context}\ncompaction-reinjection-marker</t3_code_orchestration_01>` }],
-  }] });
+  await call('thread/inject_items', { threadId: thread.thread.id, items: sections.map((value, i) => {
+    const tag = `t3_code_orchestration_${String(i + 1).padStart(2, '0')}`;
+    return { type: 'message', role: 'developer', content: [{ type: 'input_text',
+      text: `<${tag}>${value}${i === 0 ? '\ncompaction-reinjection-marker' : ''}</${tag}>` }] };
+  }) });
   await runTurn();
   assert.equal(modelRequests.length, 2);
   assert.ok(JSON.stringify(modelRequests[1]).includes('compaction-reinjection-marker'));
@@ -150,9 +159,10 @@ try {
   assert.ok(!JSON.stringify(modelRequests[1]).includes(oldBullet));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
-  console.log(JSON.stringify({ result: 'passed', codex: initialized.userAgent, checks: [
+  console.log(JSON.stringify({ result: 'passed', t3Version, codex: initialized.userAgent, checks: [
     'isolated real Codex thread starts through wrapper', 'fake MCP authenticates through local proxy',
-    'both rewritten tool descriptions are visible to real Codex', 'tool input schemas are unchanged',
+    fixture.toolDescriptionsUnchanged ? 'neutral tool descriptions preserved' : 'both tool descriptions rewritten',
+    'tool input schemas are unchanged',
     'rewritten developer context reaches fake model on turn/start',
     'rewritten developer reinjection reaches fake model on next turn',
     'all model responses are local fixtures; no live T3 tool called',

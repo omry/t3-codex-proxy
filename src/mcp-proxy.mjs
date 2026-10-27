@@ -3,7 +3,6 @@ import https from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { MAX_FRAME_BYTES, SseRewrite, rewriteJsonBytes } from './framing.mjs';
-import { rewriteToolsList } from './policy.mjs';
 
 function endError(response, status, code) {
   if (response.headersSent) return response.destroy();
@@ -30,7 +29,7 @@ async function readBounded(stream) {
   return Buffer.concat(chunks);
 }
 
-export async function startMcpProxy({ report = () => {} } = {}) {
+export async function startMcpProxy({ report = () => {}, rewriteToolsList = message => message } = {}) {
   const routes = new Map();
   const byUpstream = new Map();
   const upstreamRequests = new Set();

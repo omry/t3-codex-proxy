@@ -6,13 +6,42 @@ Detailed reference for [T3 Codex Proxy](../README.md).
 
 Requires Node.js 24+ and an existing Codex CLI provider. For the Windows desktop app with a WSL backend, use paths and Node.js from inside that backend.
 
-The proxy does not enforce a particular T3 release or nightly. It matches
-known protocol fields and instruction wording, rather than a version number.
-The source version recorded in the test fixture and verification notes is
-provenance, not a runtime pin. Other releases can work with the same formats;
-changed wording may require a policy update. Unknown review wording is
-preserved with a warning, so there is no claim of compatibility with every
-T3 release.
+## Versions
+
+The wrapper reads `initialize.params.clientInfo.version` from T3 Code and
+selects one fix set for that process. It forwards initialization unchanged.
+Concurrent T3 instances can select different fixes independently.
+
+Matching ranges use optional inclusive `min` and `max` bounds:
+
+- `{ "min": "X" }`: X and newer.
+- `{ "max": "Y" }`: Y and older.
+- Both bounds: the inclusive interval. Equal bounds: one exact version.
+
+Versions use semantic ordering, including nightly numeric components. The
+current rules select the older fix through `0.1.3-nightly.20261025.3655`, and
+the newer fix from `0.1.3-nightly.20261025.3669` onward. No fix is assigned to
+the gap between those bounds. See [the registry](../src/compatibility.mjs).
+
+Official tested support is separate from matching. Automated fixture and
+isolated real-Codex checks cover these exact releases:
+
+- `0.1.3-nightly.20261025.3655`
+- `0.1.3-nightly.20261025.3669`
+- `0.1.3-nightly.20261027.3754`
+- `0.1.3`
+
+An untested version within a matching range still receives that fix, with an
+`untested_t3_version` warning. Every rewrite checks its expected input; changed
+review wording is preserved with `unrecognized_review_guidance`. Missing,
+invalid, or unmatched versions produce `unsupported_t3_version` and pass the
+guidance through unchanged. These warnings do not stop Codex startup. No
+version or private input is interpolated into the diagnostics.
+
+Newer T3 tool descriptions contain no review rule and are preserved unchanged.
+The newer fix replaces only the conflicting review sentence in developer
+context, retaining its other instructions. Repeat the README installation
+check after upgrading; an open range does not certify future compatibility.
 
 ## Existing conversations
 

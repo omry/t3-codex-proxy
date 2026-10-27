@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { constants as osConstants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { JsonLines } from './framing.mjs';
-import { rewriteDeveloperContext } from './policy.mjs';
+import { createPolicy } from './policy.mjs';
 import { startMcpProxy } from './mcp-proxy.mjs';
 
 const WRAPPER_PATH = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
@@ -17,8 +17,8 @@ async function assertNotRecursive(realCodex) {
   }
 }
 
-export function rewriteClientMessage(message, proxy, report) {
-  rewriteDeveloperContext(message, report);
+export function rewriteClientMessage(message, proxy, report, policy) {
+  policy?.rewriteDeveloperContext(message);
   if (!['thread/start', 'thread/resume', 'thread/fork'].includes(message?.method)) return message;
   const config = message.params?.config;
   if (!config || typeof config !== 'object') return message;
@@ -50,6 +50,17 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
   let eofTimer;
   let killTimer;
   let signalled;
+  let policy;
+  let initialized = false;
+  const currentPolicy = () => policy ??= createPolicy(undefined, report);
+  const rewrite = message => {
+    if (message?.method === 'initialize' && !initialized) {
+      initialized = true;
+      const client = message.params?.clientInfo;
+      policy = createPolicy(client?.name === 'T3 Code' ? client.version : undefined, report);
+    }
+    return rewriteClientMessage(message, proxy, report, currentPolicy());
+  };
   const ownGroup = !passThrough && process.platform !== 'win32';
   const sendSignal = signal => {
     if (!child?.pid) return;
@@ -81,7 +92,8 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     stop('SIGTERM');
   }));
   try {
-    if (!passThrough) proxy = await startMcpProxy({ report });
+    if (!passThrough) proxy = await startMcpProxy({ report,
+      rewriteToolsList: message => currentPolicy().rewriteToolsList(message) });
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     await assertNotRecursive(realCodex);
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
@@ -95,7 +107,7 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal }));
     });
-    if (proxy) pump(pipeline(input, new JsonLines(message => rewriteClientMessage(message, proxy, report)), child.stdin), true);
+    if (proxy) pump(pipeline(input, new JsonLines(rewrite), child.stdin), true);
     else pump(pipeline(input, child.stdin), true);
     // EOF must terminate the owned process even if the real app-server ignores it.
     child.stdin.once('finish', () => {
