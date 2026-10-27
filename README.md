@@ -1,9 +1,17 @@
 # T3 Codex Proxy
 
-A local workaround for controlling T3 Code's injected review guidance.
-It rewrites selected developer instructions and MCP tool descriptions so your
-workflow decides what context fresh reviewers receive and when to reuse a
-reviewer conversation. T3 itself stays unmodified.
+A local workaround for an issue created by T3 Code's orchestration guidance:
+its injected developer instructions and MCP tool descriptions can override
+the user's review workflow. This has forced fresh delegates for re-checks and
+required prior findings in reviews intended to start without them.
+
+The proxy rewrites that review guidance so your workflow decides when to reuse
+the original reviewer and what context a fresh reviewer receives.
+T3 itself stays unmodified.
+
+Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
+[regression report #24877](https://github.com/pingdotgg/t3code/issues/24877), and
+[workflow-control discussion #25010](https://github.com/pingdotgg/t3code/discussions/25010#discussioncomment-19201466).
 
 Requires Node.js 24+ and an existing Codex CLI installation. Tested with a WSL
 backend. No npm dependencies to install.
