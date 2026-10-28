@@ -31,6 +31,8 @@ async function setup(t, overrides, handler) {
   policy.rewriteDeveloperContext({ method: 'turn/start', params: { additionalContext: {
     t3_code_orchestration_01: { kind: 'application', value: fixture.context },
     t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions },
+    t3_code_orchestration_03: { kind: 'application', value: fixture.sections[2] },
+    t3_code_tools: { kind: 'application', value: fixture.browserTools },
   } } });
   const proxy = await startMcpProxy({ rewriteToolsList: policy.rewriteToolsList, diagnostics: policy.diagnostics });
   const url = proxy.register(`http://127.0.0.1:${server.address().port}/mcp`);
@@ -41,9 +43,9 @@ async function setup(t, overrides, handler) {
   return { requests, request };
 }
 
-for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) {
-  test(`proxy-check reports actual config and model checklist: review=${reviewWorkflow}, PR=${prWaiting}`, async t => {
-    const { requests, request } = await setup(t, { reviewWorkflow, prWaiting });
+for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) {
+  test(`proxy-check reports actual config and model checklist: review=${reviewWorkflow}, PR=${prWaiting}, browser=${browserRouting}`, async t => {
+    const { requests, request } = await setup(t, { reviewWorkflow, prWaiting, browserRouting });
     const list = await (await request('POST', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
     assert.deepEqual(list.result.tools.at(-1), PROXY_CHECK_TOOL);
     const check = await (await request('POST', { jsonrpc: '2.0', id: 2, method: 'tools/call',
@@ -52,19 +54,23 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(check.id, 2);
     assert.equal(data.t3Version, '0.1.3');
     assert.equal(data.compatibility, 'tested');
-    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting });
+    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting });
     assert.equal(data.upstreamMcp, 'tools/list succeeded');
     assert.equal(data.observations.reviewWorkflow.rewrites > 0, reviewWorkflow);
     assert.equal(data.observations.prWaiting.rewrites > 0, prWaiting);
     assert.equal(data.observations.prWaiting.unrecognized, 0);
+    assert.equal(data.observations.browserRouting.rewrites > 0, browserRouting);
+    assert.equal(data.observations.browserRouting.unrecognized, 0);
     assert.ok(data.expected.reviewWorkflow.includes(reviewWorkflow ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.prWaiting.includes(prWaiting ? 'workflow controls' : 'preserves T3'));
+    assert.ok(data.expected.browserRouting.includes(browserRouting ? 'authenticated API, CLI, or connector' : 'preserves T3'));
     const text = check.result.content[0].text;
     assert.ok(text.startsWith('Proxy check: local facts\nT3 version: 0.1.3\nCompatibility: covered by exact-version automated tests.'));
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`PR-wait override: ${prWaiting ? 'enabled' : 'disabled'}`));
+    assert.ok(text.includes(`Browser-routing override: ${browserRouting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes('Start with "Proxy check passed."'));
-    assert.ok(text.includes('"Override checks (2):" and exactly two bullets'));
+    assert.ok(text.includes('"Override checks (3):" and exactly three bullets'));
     assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the override list'));
     assert.ok(text.includes('Do not show raw counters'));
     assert.ok(!text.includes('"rewrites":') && !text.includes('"tested":'));

@@ -4,35 +4,45 @@
 
 Verified on 2026-10-28 with Node.js 24.14.0 and Codex CLI 0.164.0:
 
-- Explicit tests for all four override combinations, enabled defaults, config
-  rejection, initial runtime context, and tagged developer reinjection.
+- All 95 tests pass, including all eight combinations of `reviewWorkflow`,
+  `prWaiting`, and `browserRouting`, enabled defaults, config rejection,
+  initial context, and tagged developer reinjection.
 - Exact released PR instructions and watch descriptions from the existing
   three source fixtures, including both versions of the PR-wait guidance.
+  The fixtures also capture browser-tool guidance from each release. Browser
+  routing replaces the page/tab condition in newer orchestration sections
+  and adds API/CLI/connector guidance to the older browser-tool block.
+  Tests preserve shared-browser controls, unrelated visual/device guidance,
+  user input, and tool results; verify repeated application and disabled
+  passthrough; and check the Codex 4,000-byte context-entry limit. Unknown
+  browser wording stays unchanged with a content-free warning.
 - Local `proxy-check` discovery, explicit config expectations, process-wide
   observations, upstream authentication, empty-argument validation, pagination,
   GET/SSE replay, request-ID reuse, opaque ordinary results, and name collisions.
 - Plain-language diagnostic facts and reporting checklist separate installation
-  facts from the two override checks. New nightly
+  facts from the three override checks. New nightly
   `0.1.4-nightly.20261027.3783` selects the latest open-ended range and reports
   assumed compatibility, without an exact-version test-coverage warning. The regression
   and an additional real-Codex smoke run use existing fixture wording with
   that advertised version. This verifies range selection and diagnostic delivery,
   not nightly-specific source coverage. Missing and unmatched versions remain unsupported.
 - The public binary loading the configured switches in an isolated installation.
-- Real Codex with local fake MCP and inference servers: both instruction fixes
+- Real Codex with local fake MCP and inference servers: all three instruction fixes
   reach inference before and after reinjection; an inference-issued code-mode
   tool call invokes `proxy-check`, whose report and checklist reach the next
   inference request. No live T3 tool or paid model endpoint is called.
 
 The real-Codex matrix uses each listed test release with enabled defaults and
-all four explicit combinations on stable `0.1.3`. To select explicit flags:
+all eight explicit combinations on stable `0.1.3`. To select explicit flags:
 
 ```sh
-npm run smoke:codex -- /absolute/path/to/real/codex test/fixtures/t3-guidance-0.1.3.json 0.1.3 '{"reviewWorkflow":false,"prWaiting":true}'
+npm run smoke:codex -- /absolute/path/to/real/codex test/fixtures/t3-guidance-0.1.3.json 0.1.3 '{"reviewWorkflow":false,"prWaiting":true,"browserRouting":true}'
 ```
 
-The fake model proves tool-result delivery, not semantic compliance by a real
-model. Live T3 startup and model interpretation of the new checklist still
+The fake model proves instruction and tool-result delivery, not semantic
+compliance by a real model. The private-advisory incident was not replayed
+against a live service, and no model-behavior evaluation was run. Live T3
+startup and model interpretation of the new guidance and checklist still
 require the installation check in the README after restarting the backend.
 
 ## Earlier installation verification

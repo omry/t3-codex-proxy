@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { PR_WAITING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
 
 const realCodex = process.argv[2];
@@ -22,6 +22,7 @@ const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process
   new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
 const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
 const sections = fixture.sections ?? [fixture.context];
+const hasPageCondition = sections.some(section => section.includes('names a page or tab'));
 const overrides = resolveOverrides(process.argv[5] ? JSON.parse(process.argv[5]) : undefined);
 let child;
 let childExit;
@@ -158,6 +159,7 @@ try {
   const context = Object.fromEntries(sections.map((value, i) =>
     [`t3_code_orchestration_${String(i + 1).padStart(2, '0')}`, { kind: 'application', value }]));
   context.t3_code_runtime = { kind: 'application', value: fixture.pullRequestInstructions };
+  context.t3_code_tools = { kind: 'application', value: fixture.browserTools };
   await runTurn(context);
   const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
   assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
@@ -165,6 +167,8 @@ try {
   assert.equal(developerText(modelRequests[0]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[0]).includes(oldBullet), !overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
+  assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   await call('thread/inject_items', { threadId: thread.thread.id, items: Object.entries(context).map(([tag, entry], i) => {
     return { type: 'message', role: 'developer', content: [{ type: 'input_text',
       text: `<${tag}>${entry.value}${i === 0 ? '\ncompaction-reinjection-marker' : ''}</${tag}>` }] };
@@ -175,6 +179,8 @@ try {
   assert.equal(developerText(modelRequests[1]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[1]).includes(oldBullet), !overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
+  assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   requestDiagnostic = true;
   await runTurn();
   assert.ok(diagnosticCalled);
@@ -187,7 +193,8 @@ try {
   assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
     diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
   assert.ok(diagnosticText.includes('Proxy check passed.'));
-  assert.ok(diagnosticText.includes('Override checks (2):'));
+  assert.ok(diagnosticText.includes('Override checks (3):'));
+  assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
   console.log(JSON.stringify({ result: 'passed', t3Version, overrides, codex: initialized.userAgent, checks: [

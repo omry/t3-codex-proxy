@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
-import { REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
 const binary = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
 const fake = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
@@ -114,16 +114,18 @@ test('binary launches fake app-server; developer rewrite, compaction and interle
 });
 
 test('public binary loads independent overrides from its local config', { timeout: 10000 }, async t => {
-  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) {
-    const peer = await launchIsolatedPublic(t, fake, ['app-server'], { realCodex: fake, overrides: { reviewWorkflow, prWaiting } });
+  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) {
+    const peer = await launchIsolatedPublic(t, fake, ['app-server'], { realCodex: fake, overrides: { reviewWorkflow, prWaiting, browserRouting } });
     peer.child.stdin.end([
       { id: 0, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: fixture.sourceVersion.slice(1) } } },
       { id: 1, method: 'turn/start', params: { additionalContext: {
         t3_code_orchestration_01: { kind: 'application', value: fixture.context },
         t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions },
+        t3_code_tools: { kind: 'application', value: fixture.browserTools },
       } } },
       { id: 2, method: 'thread/inject_items', params: { items: [{ type: 'message', role: 'developer', content: [
         { type: 'input_text', text: `<t3_code_runtime>${fixture.pullRequestInstructions}</t3_code_runtime>` },
+        { type: 'input_text', text: `<t3_code_tools>${fixture.browserTools}</t3_code_tools>` },
       ] }] } },
     ].map(message => JSON.stringify(message)).join('\n') + '\n');
     const result = await peer.exit;
@@ -132,8 +134,11 @@ test('public binary loads independent overrides from its local config', { timeou
     const context = replies.find(x => x.id === 1).result.received.params.additionalContext;
     assert.equal(context.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE), reviewWorkflow);
     assert.equal(context.t3_code_runtime.value !== fixture.pullRequestInstructions, prWaiting);
+    assert.equal(context.t3_code_tools.value.includes(BROWSER_ROUTING_GUIDANCE), browserRouting);
     assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[0].text,
       `<t3_code_runtime>${context.t3_code_runtime.value}</t3_code_runtime>`);
+    assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[1].text,
+      `<t3_code_tools>${context.t3_code_tools.value}</t3_code_tools>`);
   }
 });
 
