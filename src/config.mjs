@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-export const DEFAULT_OVERRIDES = Object.freeze({ reviewWorkflow: true, prWaiting: true });
+export const DEFAULT_OVERRIDES = Object.freeze({ reviewWorkflow: true, prWaiting: true, browserRouting: true });
 
 export function resolveOverrides(overrides = {}) {
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) ||

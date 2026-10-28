@@ -37,7 +37,8 @@ warning. The diagnostic describes them as assumed compatible. Exact-version
 test coverage is recorded separately in its raw data.
 Every rewrite checks its expected input; changed review wording is preserved
 with `unrecognized_review_guidance`; changed PR-wait
-wording is preserved with `unrecognized_pr_wait_guidance`. Missing,
+wording is preserved with `unrecognized_pr_wait_guidance`; changed browser
+wording is preserved with `unrecognized_browser_routing_guidance`. Missing,
 invalid, or unmatched versions produce `unsupported_t3_version` and pass the
 guidance through unchanged. These warnings do not stop Codex startup. No
 version or private input is interpolated into the diagnostics.
@@ -48,11 +49,19 @@ The PR-wait fix rewrites the known runtime PR block and watch-tool description,
 retaining linking rules and unrelated runtime information. Repeat the README installation
 check after upgrading to detect any changed instruction wording.
 
+The browser-routing fix replaces the condition that naming a page or tab permits
+browser automation. It prioritizes the user's selected tools and workflow, then
+suitable authenticated APIs, CLIs, or connectors. A missing operation in one
+interface is not proof that API access is unavailable. Browser automation remains
+available when requested or needed, with T3's shared-browser controls. Older
+versions receive this guidance in their browser-tool block instead. The proxy
+changes instruction delivery; it cannot guarantee that a model follows the guidance.
+
 ## Overrides and diagnostics
 
-`config.local.json` has an optional `overrides` object. `reviewWorkflow` and
-`prWaiting` each default to `true`; explicit `false` leaves that behavior's
-developer text and tool descriptions unchanged. Unknown names, null, arrays,
+`config.local.json` has an optional `overrides` object. `reviewWorkflow`,
+`prWaiting`, and `browserRouting` each default to `true`; explicit `false`
+leaves that behavior's developer text and tool descriptions unchanged. Unknown names, null, arrays,
 and non-boolean values are rejected. Legacy unrelated top-level properties
 remain ignored. The executable environment override does not override these flags.
 
@@ -75,9 +84,9 @@ make one read-only `orchestrator_capabilities` call. A rewrite count is not proo
 of the current conversation's context. Process-wide unmatched text does not
 by itself indicate conflicting instructions in this conversation. The agent
 reports a short overall result, one installation sentence with the T3 version,
-compatibility qualification, and connection status, then "Override checks (2)"
-with exactly two bullets: review workflow and PR waiting. Each bullet shows
-whether that override is enabled, its PASS/FAIL/UNKNOWN result, and a short
+compatibility qualification, and connection status, then "Override checks (3)"
+with exactly three bullets: review workflow, PR waiting, and browser routing.
+Each bullet shows whether that override is enabled, its PASS/FAIL/UNKNOWN result, and a short
 reason. Installation facts have no PASS labels. It omits raw counters and
 internal identifiers unless requested. New releases in a matching version
 range are assumed compatible without an exact-version coverage warning.
@@ -131,7 +140,8 @@ Likewise, installation does not erase original instructions in an old history.
 - Supports Codex app-server over newline-delimited JSON on stdio. Non-stdio
   app-server listeners are rejected. App-server tooling subcommands pass through.
 - Rewrites `turn/start` entries only when their keys match
-  `t3_code_orchestration_<number>` or `t3_code_runtime` and their kind is `application`.
+  `t3_code_orchestration_<number>`, `t3_code_runtime`, or `t3_code_tools` and
+  their kind is `application`.
   For `thread/inject_items`, only corresponding tagged developer `input_text`
   messages are filtered. User and untrusted context stay unchanged.
 - Redirects the flat dotted config used by T3 on `thread/start`, `thread/resume`,
@@ -170,7 +180,8 @@ logs. Real Codex stderr is forwarded unchanged, so Codex's own diagnostics remai
 subject to Codex's logging behavior.
 
 `guidance_rewritten` and `mcp_endpoint_redirected` report that those operations
-occurred. `unrecognized_review_guidance` and `unrecognized_pr_wait_guidance`
+occurred. `unrecognized_review_guidance`, `unrecognized_pr_wait_guidance`, and
+`unrecognized_browser_routing_guidance`
 mean targeted text has unknown wording: it was preserved, so the requested
 policy may not be in effect. Disabled overrides produce no guidance warnings.
 `proxy_check_name_conflict` means the upstream now uses the reserved diagnostic

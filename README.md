@@ -5,14 +5,17 @@ its injected developer instructions and MCP tool descriptions can override
 the user's workflow. This has forced fresh delegates for re-checks, required
 prior findings in independent reviews, and replaced bounded PR polling with
 T3 watches that do not preserve the workflow's timeout recovery.
+An observed browser-selection failure also sent an agent to a login page when an authenticated
+API, CLI, or connector can already complete the task.
 
-The proxy rewrites those rules so your workflow controls reviews and PR waits.
-Both fixes are enabled by default and can be disabled independently. T3 itself
-stays unmodified.
+The proxy rewrites those rules so your workflow controls reviews, PR waits,
+and tool selection. All three fixes are enabled by default and can be disabled
+independently. T3 itself stays unmodified.
 
 Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
-[regression report #24877](https://github.com/pingdotgg/t3code/issues/24877), and
-[workflow-control discussion #25010](https://github.com/pingdotgg/t3code/discussions/25010#discussioncomment-19201466).
+[regression report #24877](https://github.com/pingdotgg/t3code/issues/24877),
+[workflow-control discussion #25010](https://github.com/pingdotgg/t3code/discussions/25010#discussioncomment-19201466), and
+[unnecessary browser login #26300](https://github.com/pingdotgg/t3code/issues/26300).
 
 Requires Node.js 24+ and an existing Codex CLI installation. Tested with a WSL
 backend. No npm dependencies to install.
@@ -54,7 +57,7 @@ After restarting T3, open a new conversation using that Codex provider and paste
 proxy-check
 ```
 
-The agent checks the two overrides and reports version compatibility and the T3 connection separately.
+The agent checks the three overrides and reports version compatibility and the T3 connection separately.
 
 ## Override configuration
 
@@ -65,7 +68,8 @@ In `config.local.json`:
   "realCodex": "/absolute/path/to/real/codex",
   "overrides": {
     "reviewWorkflow": true,
-    "prWaiting": true
+    "prWaiting": true,
+    "browserRouting": true
   }
 }
 ```
@@ -75,9 +79,14 @@ In `config.local.json`:
 - `prWaiting`: preserve workflow-owned PR polling, deadlines, retry limits,
   recovery, and evidence. Retain PR linking; use T3 watching when the workflow
   selects it or specifies no waiting mechanism.
+- `browserRouting`: follow the user's selected tools and workflow; otherwise
+  prefer a suitable authenticated API, CLI, or connector. A URL alone does not
+  request browser automation. Check existing authenticated tools before asking
+  for browser login. Retain T3's shared-browser controls when browser automation
+  is requested or needed.
 
-Both default to `true`, including in existing configs without `overrides`.
-Set either to `false` to preserve T3's original guidance for that behavior.
+All three default to `true`, including in existing configs without `overrides`.
+Set any one to `false` to preserve T3's original guidance for that behavior.
 Unknown override names and non-boolean values are rejected. Restart T3's shared
 app-server after changing config; existing conversation history is not scrubbed.
 

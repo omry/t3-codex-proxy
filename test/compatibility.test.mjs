@@ -67,6 +67,14 @@ for (const fixture of fixtures) {
       assert.equal(message.params.additionalContext.t3_code_orchestration_01.value, fixture.context.replace(original, replacement));
       const expected = structuredClone(context);
       expected.t3_code_orchestration_01.value = message.params.additionalContext.t3_code_orchestration_01.value;
+      for (const [key, entry] of Object.entries(context)) {
+        if (!entry.value.includes('names a page or tab')) continue;
+        const rewritten = message.params.additionalContext[key].value;
+        assert.ok(rewritten.includes('authenticated API, CLI, or connector'));
+        assert.ok(!rewritten.includes('names a page or tab'));
+        assert.equal(rewritten.split('\n\n')[0], entry.value.split('\n\n')[0]);
+        expected[key].value = rewritten;
+      }
       assert.deepEqual(message.params.additionalContext, expected);
       assert.deepEqual(message.params.input, [fixture.context]);
       const once = structuredClone(message);

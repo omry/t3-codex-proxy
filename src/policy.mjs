@@ -28,6 +28,27 @@ const currentRules = {
 
 export const PR_WAITING_GUIDANCE = "Let the user's workflow choose how PR checks and reviews are awaited. Preserve its polling helpers, completion conditions, deadlines, retry limits, recovery, and retained evidence. Do not replace a workflow-owned wait with watch_pull_request or end the turn while that workflow requires its helper to remain active. When no workflow specifies a wait, use watch_pull_request for PR monitoring and end the turn. T3 notifications are updates to inspect; they do not satisfy workflow gates or replace timeout recovery.";
 
+export const BROWSER_ROUTING_GUIDANCE = "Follow the user's selected workflow and tools. Otherwise, prefer an available authenticated API, CLI, or connector that supports the task. A URL identifies a resource; it does not by itself request browser automation. A missing operation in one interface does not establish that the service lacks API support. Check the relevant available interface before declaring browser access necessary. Use browser automation when the user requests it or when the task requires browser interaction. Before asking the user to sign in, check whether existing authenticated tools can complete the task.";
+
+const browserRoutingRules = {
+  legacy: {
+    tools: [[
+      'You are running inside T3 Code. The `t3-code` MCP server is the product-native collaborative browser shared with the user. When it exposes `preview_*` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.',
+      BROWSER_ROUTING_GUIDANCE + '\n\nFor browser automation, use the `t3-code` MCP server as the product-native collaborative browser shared with the user. When it exposes `preview_*` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.',
+    ]],
+  },
+  current: {
+    context: [[
+      'Use them only when the current request asks for browser work or names a page or tab. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch.',
+      BROWSER_ROUTING_GUIDANCE + " For browser automation, follow T3's shared-browser instructions. For public pages without a browser request, use web fetch or search when they suffice.",
+    ]],
+    tools: [[
+      'When browser work was asked, `preview_*` is the browser you share with the user: `preview_status` first, then `preview_open` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or `preview_open` says unsupported, the user asks, or two preview calls fail on one step. Then quote the error and switch.',
+      'For browser automation, `preview_*` is the browser you share with the user: `preview_status` first, then `preview_open` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or `preview_open` says unsupported, the user or their selected workflow asks, or two preview calls fail on one step. Then quote the error and switch.',
+    ]],
+  },
+};
+
 const prWaitingRules = {
   "legacy": {
     "runtime": [
@@ -59,15 +80,17 @@ const prWaitingRules = {
   }
 };
 
-function rewriteGuidance(text, scope, rules, report, prWaiting = false) {
+function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;
   let result = text;
   for (const [before, after] of rules[scope] ?? []) result = result.replaceAll(before, after);
   if (result !== text) report('guidance_rewritten');
-  else if (prWaiting) {
+  else if (feature !== 'reviewWorkflow' || /\breview/i.test(text)) {
     const replacements = (rules[scope] ?? []).map(([, after]) => after);
-    if (!replacements.some(after => text.includes(after))) report('unrecognized_pr_wait_guidance');
-  } else if (/review/i.test(text) && !text.includes(REVIEW_GUIDANCE)) report('unrecognized_review_guidance');
+    const warning = { reviewWorkflow: 'unrecognized_review_guidance', prWaiting: 'unrecognized_pr_wait_guidance',
+      browserRouting: 'unrecognized_browser_routing_guidance' }[feature];
+    if (!replacements.some(after => text.includes(after))) report(warning);
+  }
   return result;
 }
 
@@ -86,7 +109,7 @@ function rewriteDeveloperContext(message, rewriteContext) {
       if (item?.type !== 'message' || item.role !== 'developer' || !Array.isArray(item.content)) continue;
       for (const part of item.content) {
         if (part?.type !== 'input_text' || typeof part.text !== 'string') continue;
-        part.text = part.text.replace(/(<(t3_code_orchestration_\d+|t3_code_runtime)>)([\s\S]*?)(<\/\2>)/g,
+        part.text = part.text.replace(/(<(t3_code_orchestration_\d+|t3_code_runtime|t3_code_tools)>)([\s\S]*?)(<\/\2>)/g,
           (_whole, open, key, body, close) => open + rewriteContext(key, body) + close);
       }
     }
@@ -106,18 +129,28 @@ export function createPolicy(version, report = () => {}, overrides) {
   const settings = resolveOverrides(overrides);
   const compatibility = selectCompatibility(version);
   const rules = compatibility.fixSet === 'legacy' ? legacyRules : compatibility.fixSet === 'current' ? currentRules : {};
-  const prRules = prWaitingRules[compatibility.fixSet] ?? {};
+  const featureRules = { reviewWorkflow: rules, prWaiting: prWaitingRules[compatibility.fixSet] ?? {},
+    browserRouting: browserRoutingRules[compatibility.fixSet] ?? {} };
   const observations = {
     reviewWorkflow: { rewrites: 0, unrecognized: 0 },
     prWaiting: { rewrites: 0, unrecognized: 0 },
+    browserRouting: { rewrites: 0, unrecognized: 0 },
   };
   const apply = (text, scope, feature) => rewriteGuidance(text, scope,
-    feature === 'prWaiting' ? prRules : rules, code => {
+    featureRules[feature], code => {
       observations[feature][code === 'guidance_rewritten' ? 'rewrites' : 'unrecognized']++;
       report(code);
-    }, feature === 'prWaiting');
+    }, feature);
   const rewriteContext = (key, value) => {
-    if (settings.reviewWorkflow && /^t3_code_orchestration_\d+$/.test(key)) return apply(value, 'context', 'reviewWorkflow');
+    if (/^t3_code_orchestration_\d+$/.test(key)) {
+      if (settings.reviewWorkflow) value = apply(value, 'context', 'reviewWorkflow');
+      if (settings.browserRouting && typeof value === 'string' && /\bpreview_|### Visuals and preview/.test(value)) {
+        value = apply(value, 'context', 'browserRouting');
+      }
+    }
+    if (settings.browserRouting && key === 't3_code_tools' && typeof value === 'string' && /\bbrowser\b/i.test(value)) {
+      value = apply(value, 'tools', 'browserRouting');
+    }
     if (settings.prWaiting && key === 't3_code_runtime') return apply(value, 'runtime', 'prWaiting');
     return value;
   };
