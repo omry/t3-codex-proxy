@@ -1,10 +1,12 @@
 # Third-party notices
 
-The original instruction strings in `src/policy.mjs` and the guidance fixture
+The original review and PR-wait instruction strings in `src/policy.mjs` and the guidance fixture
 in `test/fixtures/t3-guidance.json` are derived from
 [T3 Code](https://github.com/pingdotgg/t3code), release
-`v0.1.3-nightly.20261025.3655`. The source version identifies the fixture's
-provenance; it is not a runtime version requirement.
+`v0.1.3-nightly.20261025.3655`. Additional guidance fixtures derive from
+`v0.1.3-nightly.20261025.3669` and `v0.1.3` (the same source as
+`v0.1.3-nightly.20261027.3754`). These versions identify fixture provenance;
+fix selection ranges and tested support are recorded separately.
 
 T3 Code's MIT notice is reproduced below. This project does not bundle T3 Code
 or the Codex CLI.

@@ -1,16 +1,61 @@
 # Verification
 
-Verified on 2026-10-27 using WSL, Node.js 24.14.0, Codex CLI 0.164.0, and
-T3 Code `0.1.3-nightly.20261025.3655`. The T3 version records what was tested;
-the proxy does not enforce a version pin. Other versions are not qualified by
-these results.
+## Configurable overrides and diagnostic check
+
+Verified on 2026-10-28 with Node.js 24.14.0 and Codex CLI 0.164.0:
+
+- All 95 tests pass, including all eight combinations of `reviewWorkflow`,
+  `prWaiting`, and `browserRouting`, enabled defaults, config rejection,
+  initial context, and tagged developer reinjection.
+- Exact released PR instructions and watch descriptions from the existing
+  three source fixtures, including both versions of the PR-wait guidance.
+  The fixtures also capture browser-tool guidance from each release. Browser
+  routing replaces the page/tab condition in newer orchestration sections
+  and adds API/CLI/connector guidance to the older browser-tool block.
+  Tests preserve shared-browser controls, unrelated visual/device guidance,
+  user input, and tool results; verify repeated application and disabled
+  passthrough; and check the Codex 4,000-byte context-entry limit. Unknown
+  browser wording stays unchanged with a content-free warning.
+- Local `proxy-check` discovery, explicit config expectations, process-wide
+  observations, upstream authentication, empty-argument validation, pagination,
+  GET/SSE replay, request-ID reuse, opaque ordinary results, and name collisions.
+- Plain-language diagnostic facts and reporting checklist separate installation
+  facts from the three override checks. New nightly
+  `0.1.4-nightly.20261027.3783` selects the latest open-ended range and reports
+  assumed compatibility, without an exact-version test-coverage warning. The regression
+  and an additional real-Codex smoke run use existing fixture wording with
+  that advertised version. This verifies range selection and diagnostic delivery,
+  not nightly-specific source coverage. Missing and unmatched versions remain unsupported.
+- The public binary loading the configured switches in an isolated installation.
+- Real Codex with local fake MCP and inference servers: all three instruction fixes
+  reach inference before and after reinjection; an inference-issued code-mode
+  tool call invokes `proxy-check`, whose report and checklist reach the next
+  inference request. No live T3 tool or paid model endpoint is called.
+
+The real-Codex matrix uses each listed test release with enabled defaults and
+all eight explicit combinations on stable `0.1.3`. To select explicit flags:
+
+```sh
+npm run smoke:codex -- /absolute/path/to/real/codex test/fixtures/t3-guidance-0.1.3.json 0.1.3 '{"reviewWorkflow":false,"prWaiting":true,"browserRouting":true}'
+```
+
+The fake model proves instruction and tool-result delivery, not semantic
+compliance by a real model. The private-advisory incident was not replayed
+against a live service, and no model-behavior evaluation was run. Live T3
+startup and model interpretation of the new guidance and checklist still
+require the installation check in the README after restarting the backend.
+
+## Earlier installation verification
+
+Verified on 2026-10-27 using WSL, Node.js 24.14.0 and Codex CLI 0.164.0.
+The [tested-version list](usage.md#versions) records exact-release coverage
+separately from the open-ended support ranges used to select fixes.
 
 ## Automated checks
 
-The complete-suite count is intentionally omitted for this repair. Focused
-config/wrapper tests and syntax checks use local fake peers and installed fake
-Codex layouts; they do not update the real Codex installation or call a paid
-model endpoint.
+Run `npm run check` and `npm test`. Tests use local fake peers and installed
+fake Codex layouts; they do not update the real Codex installation or call a
+paid model endpoint.
 
 Coverage includes:
 
@@ -37,6 +82,9 @@ Coverage includes:
 - Legacy unknown config properties, executable override, direct launch through
   an installed fake global layout, read-only prefixes, candidate-layout spawn
   failures, fixed diagnostics, and output privacy.
+- Inclusive/open version ranges, nightly semantic ordering, tested-support
+  classification independent of matching, missing/mismatched versions, and
+  concurrent wrappers selecting different fix sets.
 
 The guidance fixture and original matcher strings were derived from the
 T3 release's orchestration instructions and orchestrator tool descriptions.
@@ -49,15 +97,27 @@ npm run smoke:codex -- /absolute/path/to/real/codex
 ```
 
 This starts the actual Codex CLI through the wrapper using a temporary Codex
-home, workspace, and an isolated config. Fake local servers supply
-MCP metadata and model responses.
+home, workspace, and an isolated config. Fake local servers supply MCP metadata
+and model responses. Optional arguments after the Codex path select a fixture
+and advertised T3 version, for example:
+
+```sh
+npm run smoke:codex -- /absolute/path/to/real/codex test/fixtures/t3-guidance-0.1.3.json 0.1.3
+```
+
+The same check passed for all four tested versions. Fixtures retain the exact
+released instruction sections and tool descriptions. Stable `0.1.3` and nightly
+`20261027.3754` share upstream commit `d2c440312e5f39d59827ed466838a623516454d6`.
+The published Linux `0.1.3` artifact was SHA-256 verified; its bundled
+`buildCodexInitializeParams` sends `clientInfo.version` from the stamped
+`0.1.3` value. Release workflows stamp package versions before building.
 
 Verified:
 
 - A new Codex thread starts and authenticates with the fake MCP server through
   the local proxy.
-- `mcpServerStatus/list` returns both rewritten descriptions with unchanged
-  input schemas.
+- `mcpServerStatus/list` returns the rewritten older descriptions or the
+  unchanged neutral newer descriptions, with unchanged input schemas.
 - Model-bound requests contain the rewritten developer paragraph and exclude
   the original conflicting paragraph.
 - A later model-bound request includes the rewritten tagged developer message
@@ -92,8 +152,11 @@ conversation history is not scrubbed.
 
 ## Limits
 
-Actual delegated-review and follow-up execution, real automatic compaction,
-live fork recovery, and compatibility across upgrades have not been qualified.
+The four-version automated matrix uses actual released payloads with real
+Codex, rather than four running T3 desktop installations. The user's live
+installation check after upgrading is still required. Actual delegated-review
+and follow-up execution on the new release, real automatic compaction, live
+fork recovery, and compatibility across other upgrades have not been qualified.
 The reinjection test exercises the RPC used after compaction, without forcing
 automatic compaction. Delivery does not guarantee that a model follows the
 policy in every case. Complete removal of all developer messages is untested.

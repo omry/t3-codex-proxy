@@ -6,13 +6,94 @@ Detailed reference for [T3 Codex Proxy](../README.md).
 
 Requires Node.js 24+ and an existing Codex CLI provider. For the Windows desktop app with a WSL backend, use paths and Node.js from inside that backend.
 
-The proxy does not enforce a particular T3 release or nightly. It matches
-known protocol fields and instruction wording, rather than a version number.
-The source version recorded in the test fixture and verification notes is
-provenance, not a runtime pin. Other releases can work with the same formats;
-changed wording may require a policy update. Unknown review wording is
-preserved with a warning, so there is no claim of compatibility with every
-T3 release.
+## Versions
+
+The wrapper reads `initialize.params.clientInfo.version` from T3 Code and
+selects one fix set for that process. It forwards initialization unchanged.
+Concurrent T3 instances can select different fixes independently.
+
+Matching ranges use optional inclusive `min` and `max` bounds:
+
+- `{ "min": "X" }`: X and newer.
+- `{ "max": "Y" }`: Y and older.
+- Both bounds: the inclusive interval. Equal bounds: one exact version.
+
+Versions use semantic ordering, including nightly numeric components. The
+current rules select the older fix through `0.1.3-nightly.20261025.3655`, and
+the newer fix from `0.1.3-nightly.20261025.3669` onward. No fix is assigned to
+the gap between those bounds. See [the registry](../src/compatibility.mjs).
+
+Matching ranges define version support, including newer nightlies and stable
+releases in the latest open-ended range. Exact-version test coverage is
+separate. Automated fixture and isolated real-Codex checks cover these exact releases:
+
+- `0.1.3-nightly.20261025.3655`
+- `0.1.3-nightly.20261025.3669`
+- `0.1.3-nightly.20261027.3754`
+- `0.1.3`
+
+New versions within a matching range receive that fix without an untested-version
+warning. The diagnostic describes them as assumed compatible. Exact-version
+test coverage is recorded separately in its raw data.
+Every rewrite checks its expected input; changed review wording is preserved
+with `unrecognized_review_guidance`; changed PR-wait
+wording is preserved with `unrecognized_pr_wait_guidance`; changed browser
+wording is preserved with `unrecognized_browser_routing_guidance`. Missing,
+invalid, or unmatched versions produce `unsupported_t3_version` and pass the
+guidance through unchanged. These warnings do not stop Codex startup. No
+version or private input is interpolated into the diagnostics.
+
+Newer delegation tool descriptions contain no review rule and are preserved.
+The review fix replaces only the conflicting sentence in orchestration context.
+The PR-wait fix rewrites the known runtime PR block and watch-tool description,
+retaining linking rules and unrelated runtime information. Repeat the README installation
+check after upgrading to detect any changed instruction wording.
+
+The browser-routing fix replaces the condition that naming a page or tab permits
+browser automation. It prioritizes the user's selected tools and workflow, then
+suitable authenticated APIs, CLIs, or connectors. A missing operation in one
+interface is not proof that API access is unavailable. Browser automation remains
+available when requested or needed, with T3's shared-browser controls. Older
+versions receive this guidance in their browser-tool block instead. The proxy
+changes instruction delivery; it cannot guarantee that a model follows the guidance.
+
+## Overrides and diagnostics
+
+`config.local.json` has an optional `overrides` object. `reviewWorkflow`,
+`prWaiting`, and `browserRouting` each default to `true`; explicit `false`
+leaves that behavior's developer text and tool descriptions unchanged. Unknown names, null, arrays,
+and non-boolean values are rejected. Legacy unrelated top-level properties
+remain ignored. The executable environment override does not override these flags.
+
+Configuration is loaded once per wrapper process. Restart T3's shared app-server
+after edits. Neither disabling a fix nor restarting erases older instructions
+already retained in conversation history.
+
+The proxy adds a read-only `proxy-check` tool on the final MCP discovery page.
+It handles that tool locally, using an upstream `tools/list` request with the
+caller's route, authentication, and session to verify access. Authentication
+failures pass through. Other tool calls and their results remain opaque.
+The check returns plain-language configuration and compatibility facts,
+and a configuration-specific checklist for the agent's next inference. Raw
+process-wide rewrite counts and exact-version test coverage remain in
+`structuredContent` for debugging. It contains no executable path, credentials,
+original prompts, or conversation text.
+
+The agent must compare its actual guidance with the reported expectations and
+make one read-only `orchestrator_capabilities` call. A rewrite count is not proof
+of the current conversation's context. Process-wide unmatched text does not
+by itself indicate conflicting instructions in this conversation. The agent
+reports a short overall result, one installation sentence with the T3 version,
+compatibility qualification, and connection status, then "Override checks (3)"
+with exactly three bullets: review workflow, PR waiting, and browser routing.
+Each bullet shows whether that override is enabled, its PASS/FAIL/UNKNOWN result, and a short
+reason. Installation facts have no PASS labels. It omits raw counters and
+internal identifiers unless requested. New releases in a matching version
+range are assumed compatible without an exact-version coverage warning.
+Missing evidence about received guidance or connectivity is UNKNOWN; the check
+does not create delegates, watches, schedules, or messages. T3 has no knowledge
+of this diagnostic tool, and neither the proxy nor the diagnostic manages a
+workflow's waits. Existing T3 watch notifications remain unchanged.
 
 ## Existing conversations
 
@@ -59,7 +140,8 @@ Likewise, installation does not erase original instructions in an old history.
 - Supports Codex app-server over newline-delimited JSON on stdio. Non-stdio
   app-server listeners are rejected. App-server tooling subcommands pass through.
 - Rewrites `turn/start` entries only when their keys match
-  `t3_code_orchestration_<number>` and their kind is `application`.
+  `t3_code_orchestration_<number>`, `t3_code_runtime`, or `t3_code_tools` and
+  their kind is `application`.
   For `thread/inject_items`, only corresponding tagged developer `input_text`
   messages are filtered. User and untrusted context stay unchanged.
 - Redirects the flat dotted config used by T3 on `thread/start`, `thread/resume`,
@@ -79,7 +161,7 @@ Likewise, installation does not erase original instructions in an old history.
   HTTP connection headers are normalized for proxying. It requests identity
   encoding; compressed metadata responses are rejected. JSON request bodies,
   buffered metadata responses, and individual stream frames are limited to
-  16 MiB. At most 4,096 list request IDs are retained per wrapper for replay;
+  16 MiB. At most 4,096 discovery/diagnostic request IDs are retained per wrapper for replay;
   session deletion or reuse of an ID for another method clears its entry.
   Further new list IDs receive HTTP 503 at the limit; restart the wrapper if
   the upstream does not delete sessions. Entries are not silently evicted.
@@ -98,8 +180,12 @@ logs. Real Codex stderr is forwarded unchanged, so Codex's own diagnostics remai
 subject to Codex's logging behavior.
 
 `guidance_rewritten` and `mcp_endpoint_redirected` report that those operations
-occurred. `unrecognized_review_guidance` means a targeted review description or
-context has unknown wording: it was preserved, so the requested policy may not
-be in effect. Inspect that version before relying on it. Unknown formats are
-never replaced with a broad removal of orchestration instructions.
+occurred. `unrecognized_review_guidance`, `unrecognized_pr_wait_guidance`, and
+`unrecognized_browser_routing_guidance`
+mean targeted text has unknown wording: it was preserved, so the requested
+policy may not be in effect. Disabled overrides produce no guidance warnings.
+`proxy_check_name_conflict` means the upstream now uses the reserved diagnostic
+name; the proxy rejects that metadata response rather than shadowing its tool.
+Inspect the version before relying on it. Unknown formats are never replaced
+with a broad removal of instructions.
 

@@ -9,7 +9,8 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { resolveOverrides } from '../src/config.mjs';
 
 const realCodex = process.argv[2];
 if (!realCodex || !path.isAbsolute(realCodex)) throw new Error('Supply an absolute real Codex path.');
@@ -17,19 +18,33 @@ const root = await mkdtemp(path.join(tmpdir(), 't3-codex-proxy-smoke-'));
 const home = path.join(root, 'codex-home');
 const workspace = path.join(root, 'workspace');
 await mkdir(home); await mkdir(workspace);
-const fixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
+const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process.argv[3]) :
+  new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
+const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
+const sections = fixture.sections ?? [fixture.context];
+const hasPageCondition = sections.some(section => section.includes('names a page or tab'));
+const overrides = resolveOverrides(process.argv[5] ? JSON.parse(process.argv[5]) : undefined);
 let child;
 let childExit;
 const methods = [];
 const modelRequests = [];
+let requestDiagnostic = false;
+let diagnosticCalled = false;
 const server = http.createServer(async (request, response) => {
   if (request.url.startsWith('/responses')) {
     const parts = [];
     for await (const chunk of request) parts.push(chunk);
-    modelRequests.push(JSON.parse(Buffer.concat(parts)));
+    const modelRequest = JSON.parse(Buffer.concat(parts));
+    modelRequests.push(modelRequest);
     response.writeHead(200, { 'content-type': 'text/event-stream' });
-    const item = { id: 'msg_fake', type: 'message', role: 'assistant', status: 'completed',
+    let item = { id: 'msg_fake', type: 'message', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'Isolated fixture response.', annotations: [] }] };
+    if (requestDiagnostic && !diagnosticCalled) {
+      item = { id: 'fc_proxy_check', type: 'custom_tool_call', call_id: 'proxy_check_smoke',
+        namespace: 'functions', name: 'exec', status: 'completed',
+        input: 'const tool = ALL_TOOLS.find(tool => /proxy[-_]check$/.test(tool.name)); if (!tool) throw new Error("missing proxy diagnostic"); text(await tools[tool.name]({}));' };
+      diagnosticCalled = true;
+    }
     const event = (type, fields) => response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`);
     event('response.created', { response: { id: 'resp_fake', object: 'response', status: 'in_progress', output: [] } });
     event('response.output_item.done', { output_index: 0, item });
@@ -52,6 +67,7 @@ const server = http.createServer(async (request, response) => {
   if (message.method === 'tools/list') return reply({ tools: [
     { name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object', properties: {} } },
     { name: 't3_thread_send', description: fixture.t3_thread_send, inputSchema: { type: 'object', properties: {} } },
+    { name: 'watch_pull_request', description: fixture.watch_pull_request, inputSchema: { type: 'object', properties: {} } },
   ] });
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Not implemented in isolated fixture' } }));
@@ -61,7 +77,7 @@ try {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   // Use a temporary config so the smoke never reads or changes the live config.
   const wrapperConfig = path.join(root, 'wrapper-config.json');
-  await writeFile(wrapperConfig, JSON.stringify({ realCodex }));
+  await writeFile(wrapperConfig, JSON.stringify({ realCodex, overrides }));
   child = spawn(process.execPath, [fileURLToPath(new URL('../test/fixtures/run-configured-wrapper.mjs', import.meta.url)), wrapperConfig, 'app-server'], {
     cwd: workspace,
     env: { ...process.env, CODEX_HOME: home, T3_CODEX_PROXY_REAL_CODEX: realCodex },
@@ -95,7 +111,7 @@ try {
     pending.set(requestId, { resolve, reject, timer });
     child.stdin.write(JSON.stringify({ id: requestId, method, params }) + '\n');
   });
-  const initialized = await call('initialize', { clientInfo: { name: 't3-codex-proxy-smoke', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+  const initialized = await call('initialize', { clientInfo: { name: 'T3 Code', version: t3Version }, capabilities: { experimentalApi: true } });
   child.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n');
   const config = { 'model_providers.isolated': {
     name: 'Isolated fake model', base_url: `http://127.0.0.1:${server.address().port}`,
@@ -113,7 +129,9 @@ try {
   for (const name of ['delegate_task', 't3_thread_send']) {
     const tool = t3.tools[name];
     assert.ok(tool, `${name} loaded by real Codex`);
-    if (!tool.description.includes(REVIEW_GUIDANCE)) {
+    if (fixture.toolDescriptionsUnchanged || !overrides.reviewWorkflow) {
+      assert.equal(tool.description, fixture[name], `${name}: neutral latest description preserved`);
+    } else if (!tool.description.includes(REVIEW_GUIDANCE)) {
       // Only fixture comparisons and fixed event names are safe to disclose.
       await new Promise(resolve => setTimeout(resolve, 20));
       assert.fail(`${name} has unrewritten guidance: ${JSON.stringify({
@@ -124,9 +142,11 @@ try {
     }
     assert.deepEqual(tool.inputSchema, { type: 'object', properties: {} });
   }
+  assert.ok(t3.tools['proxy-check'], 'Local diagnostic tool loaded by real Codex');
+  assert.equal(t3.tools.watch_pull_request.description !== fixture.watch_pull_request, overrides.prWaiting);
   const runTurn = async additionalContext => {
     const result = await call('turn/start', { threadId: thread.thread.id,
-      input: [{ type: 'text', text: 'Reply with a short confirmation. Do not use tools.' }],
+      input: [{ type: 'text', text: requestDiagnostic ? 'Call proxy-check and report its diagnostics.' : 'Reply with a short confirmation. Do not use tools.' }],
       ...(additionalContext ? { additionalContext } : {}),
     });
     const deadline = Date.now() + 20000;
@@ -136,25 +156,54 @@ try {
     }
     assert.equal(completedTurns.find(turn => turn.id === result.turn.id).status, 'completed');
   };
-  await runTurn({ t3_code_orchestration_01: { kind: 'application', value: fixture.context } });
-  const oldBullet = fixture.context.split('\n').find(line => line.startsWith('- For independent'));
-  assert.ok(JSON.stringify(modelRequests[0]).includes(REVIEW_GUIDANCE));
-  assert.ok(!JSON.stringify(modelRequests[0]).includes(oldBullet));
-  await call('thread/inject_items', { threadId: thread.thread.id, items: [{ type: 'message', role: 'developer',
-    content: [{ type: 'input_text', text: `<t3_code_orchestration_01>${fixture.context}\ncompaction-reinjection-marker</t3_code_orchestration_01>` }],
-  }] });
+  const context = Object.fromEntries(sections.map((value, i) =>
+    [`t3_code_orchestration_${String(i + 1).padStart(2, '0')}`, { kind: 'application', value }]));
+  context.t3_code_runtime = { kind: 'application', value: fixture.pullRequestInstructions };
+  context.t3_code_tools = { kind: 'application', value: fixture.browserTools };
+  await runTurn(context);
+  const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
+  assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
+  const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
+  assert.equal(developerText(modelRequests[0]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[0]).includes(oldBullet), !overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
+  assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
+  await call('thread/inject_items', { threadId: thread.thread.id, items: Object.entries(context).map(([tag, entry], i) => {
+    return { type: 'message', role: 'developer', content: [{ type: 'input_text',
+      text: `<${tag}>${entry.value}${i === 0 ? '\ncompaction-reinjection-marker' : ''}</${tag}>` }] };
+  }) });
   await runTurn();
   assert.equal(modelRequests.length, 2);
   assert.ok(JSON.stringify(modelRequests[1]).includes('compaction-reinjection-marker'));
-  assert.ok(JSON.stringify(modelRequests[1]).includes(REVIEW_GUIDANCE));
-  assert.ok(!JSON.stringify(modelRequests[1]).includes(oldBullet));
+  assert.equal(developerText(modelRequests[1]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[1]).includes(oldBullet), !overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
+  assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
+  requestDiagnostic = true;
+  await runTurn();
+  assert.ok(diagnosticCalled);
+  const diagnosticOutput = modelRequests.at(-1).input.find(item => item.type === 'custom_tool_call_output' && item.call_id === 'proxy_check_smoke');
+  assert.ok(diagnosticOutput, 'Codex sends proxy-check output into the next inference');
+  const diagnosticText = JSON.stringify(diagnosticOutput.output);
+  assert.ok(diagnosticText.includes('Diagnostic checklist:'), diagnosticText.slice(0, 500));
+  assert.ok(diagnosticText.includes('orchestrator_capabilities'));
+  assert.ok(diagnosticText.includes('Counts cover the whole wrapper process'));
+  assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
+    diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
+  assert.ok(diagnosticText.includes('Proxy check passed.'));
+  assert.ok(diagnosticText.includes('Override checks (3):'));
+  assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
-  console.log(JSON.stringify({ result: 'passed', codex: initialized.userAgent, checks: [
+  console.log(JSON.stringify({ result: 'passed', t3Version, overrides, codex: initialized.userAgent, checks: [
     'isolated real Codex thread starts through wrapper', 'fake MCP authenticates through local proxy',
-    'both rewritten tool descriptions are visible to real Codex', 'tool input schemas are unchanged',
+    'configured tool-description rewrites match explicit settings',
+    'tool input schemas are unchanged',
     'rewritten developer context reaches fake model on turn/start',
     'rewritten developer reinjection reaches fake model on next turn',
+    'agent calls local proxy-check and its diagnostic checklist reaches the next inference',
     'all model responses are local fixtures; no live T3 tool called',
   ] }, null, 2));
 } finally {

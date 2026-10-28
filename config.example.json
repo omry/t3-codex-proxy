@@ -1,3 +1,8 @@
 {
-  "realCodex": "/absolute/path/to/real/codex"
+  "realCodex": "/absolute/path/to/real/codex",
+  "overrides": {
+    "reviewWorkflow": true,
+    "prWaiting": true,
+    "browserRouting": true
+  }
 }

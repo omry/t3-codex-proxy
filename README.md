@@ -1,9 +1,21 @@
 # T3 Codex Proxy
 
-A local workaround for controlling T3 Code's injected review guidance.
-It rewrites selected developer instructions and MCP tool descriptions so your
-workflow decides what context fresh reviewers receive and when to reuse a
-reviewer conversation. T3 itself stays unmodified.
+A local workaround for an issue created by T3 Code's orchestration guidance:
+its injected developer instructions and MCP tool descriptions can override
+the user's workflow. This has forced fresh delegates for re-checks, required
+prior findings in independent reviews, and replaced bounded PR polling with
+T3 watches that do not preserve the workflow's timeout recovery.
+An observed browser-selection failure also sent an agent to a login page when an authenticated
+API, CLI, or connector can already complete the task.
+
+The proxy rewrites those rules so your workflow controls reviews, PR waits,
+and tool selection. All three fixes are enabled by default and can be disabled
+independently. T3 itself stays unmodified.
+
+Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
+[regression report #24877](https://github.com/pingdotgg/t3code/issues/24877),
+[workflow-control discussion #25010](https://github.com/pingdotgg/t3code/discussions/25010#discussioncomment-19201466), and
+[unnecessary browser login #26300](https://github.com/pingdotgg/t3code/issues/26300).
 
 Requires Node.js 24+ and an existing Codex CLI installation. Tested with a WSL
 backend. No npm dependencies to install.
@@ -39,24 +51,44 @@ To undo the setup, restore the original Binary path and restart T3.
 
 ## Check the installation
 
-After restarting T3, open a **new conversation using that Codex provider** and
-paste:
+After restarting T3, open a new conversation using that Codex provider and paste:
 
 ```text
-Call orchestrator_capabilities exactly once. Inspect the live delegate_task and
-t3_thread_send tool descriptions, and summarize the developer review guidance.
-Report PASS only if the call succeeds, both descriptions say "Let the user's
-review workflow determine review context and reviewer continuity", and the
-developer guidance agrees: fresh reviews omit earlier findings unless requested;
-same-reviewer follow-ups use childThreadId. Otherwise report FAIL and explain
-what differs or could not be checked. Do not create agents, send messages, or
-change files or settings. Include the capability-call outcome and matching
-excerpts from both tool descriptions as evidence.
+proxy-check
 ```
 
-**PASS** confirms live instruction delivery and MCP forwarding. It does not
-test actual delegation. If it fails, check the provider's Binary path and fully
-restart T3 before retrying in another new conversation.
+The agent checks the three overrides and reports version compatibility and the T3 connection separately.
+
+## Override configuration
+
+In `config.local.json`:
+
+```json
+{
+  "realCodex": "/absolute/path/to/real/codex",
+  "overrides": {
+    "reviewWorkflow": true,
+    "prWaiting": true,
+    "browserRouting": true
+  }
+}
+```
+
+- `reviewWorkflow`: let the user's workflow choose fresh-review context and
+  reviewer continuity.
+- `prWaiting`: preserve workflow-owned PR polling, deadlines, retry limits,
+  recovery, and evidence. Retain PR linking; use T3 watching when the workflow
+  selects it or specifies no waiting mechanism.
+- `browserRouting`: follow the user's selected tools and workflow; otherwise
+  prefer a suitable authenticated API, CLI, or connector. A URL alone does not
+  request browser automation. Check existing authenticated tools before asking
+  for browser login. Retain T3's shared-browser controls when browser automation
+  is requested or needed.
+
+All three default to `true`, including in existing configs without `overrides`.
+Set any one to `false` to preserve T3's original guidance for that behavior.
+Unknown override names and non-boolean values are rejected. Restart T3's shared
+app-server after changing config; existing conversation history is not scrubbed.
 
 ## Codex updates
 
@@ -72,9 +104,11 @@ npm run check
 npm test
 ```
 
-Changes to T3 Code's instructions or protocols may require patches or updates
-to this proxy. Repeat the installation check after updating T3. The filter
-matches known wording rather than a specific T3 version.
+Fixes are selected automatically from T3's initialization version. Newer
+nightlies and stable releases use the latest open-ended range and are assumed
+compatible. [Exact-version test coverage](docs/usage.md#versions) is recorded
+separately; missing coverage does not prevent applying the matching fixes.
+Changes to T3 may require proxy updates; repeat the installation check after upgrading.
 See [usage and limitations](docs/usage.md),
 [verification](docs/verification.md), and the [rewrite policy](src/policy.mjs).
 

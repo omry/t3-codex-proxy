@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { startMcpProxy } from '../src/mcp-proxy.mjs';
-import { REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { startMcpProxy as startProxy } from '../src/mcp-proxy.mjs';
+import { REVIEW_GUIDANCE, createPolicy } from '../src/policy.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
+const startMcpProxy = options => startProxy({ ...options,
+  rewriteToolsList: createPolicy(fixture.sourceVersion.slice(1), options?.report).rewriteToolsList });
 const listed = id => ({ jsonrpc: '2.0', id, result: { tools: [{ name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object' } }] } });
 
 function decodeCompleteEvent(bytes) {
@@ -234,7 +236,7 @@ test('unrecognized metadata is forwarded unchanged and warns without exposing co
   });
   const data = await (await post(url, { id: 2, method: 'tools/list' })).json();
   assert.equal(data.result.tools[0].description, 'Unknown review requirement: private-marker');
-  assert.deepEqual(events, ['mcp_endpoint_redirected', 'unrecognized_review_guidance']);
+  assert.deepEqual(events, ['t3_fixset_legacy', 'mcp_endpoint_redirected', 'unrecognized_review_guidance']);
 });
 
 test('unknown routes, web origins and external/stale endpoints are rejected', async t => {

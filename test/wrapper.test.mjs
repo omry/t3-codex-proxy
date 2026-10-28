@@ -8,13 +8,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
-import { REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
 const binary = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
 const fake = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
 
-function launch(t, args = ['app-server'], realCodex = fake) {
+function launch(t, args = ['app-server'], realCodex = fake, t3Version = fixture.sourceVersion.slice(1)) {
   const child = spawn(process.execPath, [binary, ...args], { env: { ...process.env, T3_CODEX_PROXY_REAL_CODEX: realCodex }, stdio: ['pipe', 'pipe', 'pipe'] });
   const messages = [];
   const waiters = new Set();
@@ -30,6 +30,8 @@ function launch(t, args = ['app-server'], realCodex = fake) {
     for (const check of waiters) check();
   });
   child.stderr.on('data', chunk => { stderr += chunk; });
+  if (args[0] === 'app-server') child.stdin.write(JSON.stringify({ id: 'test-initialize', method: 'initialize',
+    params: { clientInfo: { name: 'T3 Code', version: t3Version } } }) + '\n');
   t.after(async () => { if (!closed) { child.kill('SIGKILL'); await exit; } });
   function waitFor(predicate) {
     return new Promise((resolve, reject) => {
@@ -50,7 +52,7 @@ async function launchIsolatedPublic(t, realCodex, args = ['app-server'], config 
   await mkdir(path.join(root, 'bin'), { recursive: true });
   await mkdir(path.join(root, 'src'), { recursive: true });
   for (const file of ['bin/t3-codex-proxy.mjs', 'src/config.mjs', 'src/framing.mjs',
-    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/wrapper.mjs']) {
+    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/compatibility.mjs', 'src/diagnostics.mjs', 'src/wrapper.mjs']) {
     await copyFile(file, path.join(root, file));
   }
   await chmod(path.join(root, 'bin/t3-codex-proxy.mjs'), 0o755);
@@ -111,6 +113,35 @@ test('binary launches fake app-server; developer rewrite, compaction and interle
   assert.ok(!peer.stderr().includes('private-prompt-marker'));
 });
 
+test('public binary loads independent overrides from its local config', { timeout: 10000 }, async t => {
+  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) {
+    const peer = await launchIsolatedPublic(t, fake, ['app-server'], { realCodex: fake, overrides: { reviewWorkflow, prWaiting, browserRouting } });
+    peer.child.stdin.end([
+      { id: 0, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: fixture.sourceVersion.slice(1) } } },
+      { id: 1, method: 'turn/start', params: { additionalContext: {
+        t3_code_orchestration_01: { kind: 'application', value: fixture.context },
+        t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions },
+        t3_code_tools: { kind: 'application', value: fixture.browserTools },
+      } } },
+      { id: 2, method: 'thread/inject_items', params: { items: [{ type: 'message', role: 'developer', content: [
+        { type: 'input_text', text: `<t3_code_runtime>${fixture.pullRequestInstructions}</t3_code_runtime>` },
+        { type: 'input_text', text: `<t3_code_tools>${fixture.browserTools}</t3_code_tools>` },
+      ] }] } },
+    ].map(message => JSON.stringify(message)).join('\n') + '\n');
+    const result = await peer.exit;
+    assert.equal(result.code, 0);
+    const replies = result.stdout.trim().split('\n').map(JSON.parse);
+    const context = replies.find(x => x.id === 1).result.received.params.additionalContext;
+    assert.equal(context.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE), reviewWorkflow);
+    assert.equal(context.t3_code_runtime.value !== fixture.pullRequestInstructions, prWaiting);
+    assert.equal(context.t3_code_tools.value.includes(BROWSER_ROUTING_GUIDANCE), browserRouting);
+    assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[0].text,
+      `<t3_code_runtime>${context.t3_code_runtime.value}</t3_code_runtime>`);
+    assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[1].text,
+      `<t3_code_tools>${context.t3_code_tools.value}</t3_code_tools>`);
+  }
+});
+
 test('wrapper-owned MCP proxy is used by child and closes with child', { timeout: 10000 }, async t => {
   const upstream = http.createServer(async (req, res) => {
     assert.equal(req.headers.authorization, 'Bearer private-token-marker');
@@ -131,6 +162,43 @@ test('wrapper-owned MCP proxy is used by child and closes with child', { timeout
   peer.child.stdin.end(); assert.equal((await peer.exit).code, 0);
   await assert.rejects(fetch(settings.url));
   assert.ok(!peer.stderr().includes('private-token-marker'));
+});
+
+test('concurrent old and current wrappers select independent policies and preserve initialization', { timeout: 10000 }, async t => {
+  const current = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-0.1.3.json', import.meta.url)));
+  await Promise.all([fixture, current].map(async source => {
+    const version = source.sourceVersion.slice(1);
+    const peer = launch(t, ['app-server'], fake, version);
+    const initialize = (await peer.waitFor(x => x.id === 'test-initialize')).result.received;
+    assert.deepEqual(initialize.params.clientInfo, { name: 'T3 Code', version });
+    // A second initialize must not switch this process's selected T3 version.
+    peer.send({ id: 90, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: source === fixture ? '0.1.3' : fixture.sourceVersion.slice(1) } } });
+    await peer.waitFor(x => x.id === 90);
+    peer.send({ id: 91, method: 'turn/start', params: {
+      additionalContext: { t3_code_orchestration_01: { kind: 'application', value: source.context } },
+    } });
+    const turn = (await peer.waitFor(x => x.id === 91)).result.received;
+    assert.ok(turn.params.additionalContext.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE));
+    assert.ok(!peer.stderr().includes('unrecognized_review_guidance'));
+    peer.child.stdin.end();
+    assert.equal((await peer.exit).code, 0);
+  }));
+});
+
+test('missing or invalid T3 version warns and forwards guidance without a legacy fallback', { timeout: 10000 }, async t => {
+  for (const version of [null, 'unknown-private-marker']) {
+    const peer = launch(t, ['app-server'], fake, version);
+    peer.send({ id: 92, method: 'turn/start', params: {
+      additionalContext: { t3_code_orchestration_01: { kind: 'application', value: fixture.context } },
+    } });
+    const turn = (await peer.waitFor(x => x.id === 92)).result.received;
+    assert.equal(turn.params.additionalContext.t3_code_orchestration_01.value, fixture.context);
+    peer.child.stdin.end();
+    assert.equal((await peer.exit).code, 0);
+    assert.ok(peer.stderr().includes('unsupported_t3_version'));
+    assert.ok(peer.stderr().includes('unrecognized_review_guidance'));
+    assert.ok(!peer.stderr().includes('private-marker'));
+  }
 });
 
 test('version and non-app-server exit codes pass through', { timeout: 10000 }, async t => {
