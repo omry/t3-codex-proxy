@@ -31,6 +31,8 @@ separate. Automated fixture and isolated real-Codex checks cover these exact rel
 - `0.1.3-nightly.20261025.3669`
 - `0.1.3-nightly.20261027.3754`
 - `0.1.3`
+- `0.1.7-nightly.20261031.3991` (live PR/browser wording; unchanged inputs
+  retained from the earlier fixture)
 
 New versions within a matching range receive that fix without an untested-version
 warning. The diagnostic describes them as assumed compatible. Exact-version

@@ -41,6 +41,9 @@ const browserRoutingRules = {
     context: [[
       'Use them only when the current request asks for browser work or names a page or tab. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch.',
       BROWSER_ROUTING_GUIDANCE + " For browser automation, follow T3's shared-browser instructions. For public pages without a browser request, use web fetch or search when they suffice.",
+    ], [
+      'Use them when the current request asks for browser work, including recording edits, or names a page or tab.',
+      BROWSER_ROUTING_GUIDANCE + " For browser automation, follow T3's shared-browser instructions.",
     ]],
     tools: [[
       'When browser work was asked, `preview_*` is the browser you share with the user: `preview_status` first, then `preview_open` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or `preview_open` says unsupported, the user asks, or two preview calls fail on one step. Then quote the error and switch.',
@@ -79,6 +82,15 @@ const prWaitingRules = {
     ]
   }
 };
+
+// The 3991 nightly narrows the wait prohibition to PRs. Keep the complete
+// runtime-block guard and the same replacement for both observed wordings.
+const [currentPrRuntime, rewrittenPrRuntime] = prWaitingRules.current.runtime[0];
+prWaitingRules.current.runtime.push([
+  currentPrRuntime.replace('Never wait with sleep, loops, gh --watch, Monitor, or ScheduleWakeup.',
+    'For PR waits, no sleep, loops, gh --watch, Monitor or ScheduleWakeup.'),
+  rewrittenPrRuntime,
+]);
 
 function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;

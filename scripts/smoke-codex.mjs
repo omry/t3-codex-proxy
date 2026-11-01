@@ -78,6 +78,15 @@ try {
   // Use a temporary config so the smoke never reads or changes the live config.
   const wrapperConfig = path.join(root, 'wrapper-config.json');
   await writeFile(wrapperConfig, JSON.stringify({ realCodex, overrides }));
+  // Codex also checks the app-server's active provider when starting a turn.
+  // Select the fake provider at startup as well as on the isolated thread.
+  await writeFile(path.join(home, 'config.toml'), `model_provider = "isolated"
+[model_providers.isolated]
+name = "Isolated fake model"
+base_url = "http://127.0.0.1:${server.address().port}"
+wire_api = "responses"
+requires_openai_auth = false
+`);
   child = spawn(process.execPath, [fileURLToPath(new URL('../test/fixtures/run-configured-wrapper.mjs', import.meta.url)), wrapperConfig, 'app-server'], {
     cwd: workspace,
     env: { ...process.env, CODEX_HOME: home, T3_CODEX_PROXY_REAL_CODEX: realCodex },
@@ -101,22 +110,19 @@ try {
     const waiter = pending.get(message.id);
     if (!waiter) return;
     pending.delete(message.id); clearTimeout(waiter.timer);
-    if (message.error) waiter.reject(new Error(`Codex RPC failed (${message.error.code})`));
+    if (message.error) waiter.reject(new Error(`Codex RPC failed (${message.error.code}) for ${waiter.method}`));
     else waiter.resolve(message.result);
   });
   let id = 0;
   const call = (method, params) => new Promise((resolve, reject) => {
     const requestId = ++id;
     const timer = setTimeout(() => { pending.delete(requestId); reject(new Error(`Timed out: ${method}`)); }, 20000);
-    pending.set(requestId, { resolve, reject, timer });
+    pending.set(requestId, { resolve, reject, timer, method });
     child.stdin.write(JSON.stringify({ id: requestId, method, params }) + '\n');
   });
   const initialized = await call('initialize', { clientInfo: { name: 'T3 Code', version: t3Version }, capabilities: { experimentalApi: true } });
   child.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n');
-  const config = { 'model_providers.isolated': {
-    name: 'Isolated fake model', base_url: `http://127.0.0.1:${server.address().port}`,
-    wire_api: 'responses', requires_openai_auth: false,
-  }, 'mcp_servers.t3-code': {
+  const config = { 'mcp_servers.t3-code': {
     url: `http://127.0.0.1:${server.address().port}/mcp`,
     http_headers: { Authorization: 'Bearer isolated-fake-token' }, startup_timeout_sec: 10,
   }, mcp_optional_startup_grace_ms: 10000 };
