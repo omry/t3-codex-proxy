@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
-const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json']
+const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
 
 for (const fixture of fixtures) {
@@ -37,8 +37,9 @@ for (const fixture of fixtures) {
         assert.equal(browser !== browserContext, browserRouting);
         assert.equal(browser.includes('names a page or tab'), !browserRouting);
         assert.ok(browser.startsWith(browserContext.split('\n')[0] + '\n\n' + browserContext.split('\n')[2] + '\n'));
-        assert.ok(browser.includes('Never use `preview_*` to verify or show your own edit'));
+        assert.ok(browser.includes(browserContext.split('\n').find(line => line.startsWith('- Never use `preview_*`')).split('. ')[0]));
         assert.ok(browser.includes('Close a tab you opened before you reply'));
+        assert.ok(browser.includes('Do not repeat preview calls from an earlier turn.'));
       }
       const received = browserContext ? actual.t3_code_orchestration_03.value : actual.t3_code_tools.value;
       assert.equal(received.includes('authenticated API, CLI, or connector'), browserRouting);
@@ -52,6 +53,7 @@ for (const fixture of fixtures) {
         assert.ok(actual.t3_code_runtime.value.includes('deadlines'));
         assert.ok(actual.t3_code_runtime.value.includes('recovery'));
         assert.ok(!actual.t3_code_runtime.value.includes('Never wait with sleep'));
+        assert.ok(!actual.t3_code_runtime.value.includes('For PR waits, no sleep'));
         assert.ok(!actual.t3_code_runtime.value.includes('so do not poll or run your own watcher'));
         assert.ok(!actual.t3_code_runtime.value.includes('do not watch or poll PRs'));
         assert.ok(actual.t3_code_runtime.value.startsWith('<runtime_info>private runtime marker</runtime_info>'));
@@ -200,6 +202,24 @@ test('changed PR wording and unsupported versions are preserved with fixed warni
     assert.ok(events.includes('unrecognized_pr_wait_guidance'));
     assert.ok(!events.join(' ').includes('private'));
   }
+});
+
+test('nightly matches preserve changed surrounding PR rules and unknown browser sentences', () => {
+  const fixture = fixtures.find(({ sourceVersion }) => sourceVersion === 'v0.1.7-nightly.20261031.3991');
+  const events = [];
+  const policy = createPolicy(fixture.sourceVersion.slice(1), code => events.push(code), { reviewWorkflow: false });
+  const message = { method: 'turn/start', params: { additionalContext: {
+    t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions.replace(
+      'Links and watches persist across pushes.', 'Changed private PR marker.') },
+    t3_code_orchestration_03: { kind: 'application', value: fixture.sections[2].replace(
+      'including recording edits', 'including changed private browser behavior') },
+  } } };
+  const original = structuredClone(message);
+  policy.rewriteDeveloperContext(message);
+  assert.deepEqual(message, original);
+  assert.ok(events.includes('unrecognized_pr_wait_guidance'));
+  assert.ok(events.includes('unrecognized_browser_routing_guidance'));
+  assert.ok(!events.join(' ').includes('private'));
 });
 
 test('current PR waiting preserves the branch update prerequisite in context and reinjection', () => {

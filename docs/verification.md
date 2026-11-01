@@ -1,5 +1,31 @@
 # Verification
 
+## Nightly wording regression
+
+Verified on 2026-11-01 with Node.js 24.14.0 and Codex CLI 0.166.0:
+
+- Live `proxy-check` and `orchestrator_capabilities` calls succeeded on T3
+  `0.1.7-nightly.20261031.3991`. The received review guidance was rewritten,
+  but the PR runtime block and browser-selection sentence were not. Both had
+  changed wording that no longer matched the guarded substitutions.
+- Added exact matches for those two inputs. The new fixture records the
+  observed PR block and visual section; it retains known review and browser-tool
+  inputs whose rewritten forms were observed unchanged in live context.
+- All eight override combinations pass for the new fixture, including disabled
+  passthrough, idempotence, tagged reinjection, preservation of unrelated
+  guidance, and the 4,000-byte context-entry limit. All 105 tests and syntax
+  checks pass; changed surrounding PR rules and unknown browser sentences
+  remain untouched with content-free warnings.
+- The isolated real-Codex smoke passes with the new fixture. All three fixes
+  reach fake inference before and after reinjection, and the diagnostic reaches
+  the next inference. The smoke now selects its fake provider at app-server
+  startup as well as on the thread, as required by Codex 0.166.0. Additional
+  smoke runs pass with every override disabled on the nightly and with enabled
+  defaults on stable `0.1.3`.
+
+The running shared app-server still needs a T3 restart to load the source
+changes. A post-restart live installation check has not been performed.
+
 ## Configurable overrides and diagnostic check
 
 Verified on 2026-10-28 with Node.js 24.14.0 and Codex CLI 0.164.0:
