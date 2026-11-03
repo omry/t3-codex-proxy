@@ -92,6 +92,12 @@ prWaitingRules.current.runtime.push([
   rewrittenPrRuntime,
 ]);
 
+// Nightly 4119 offers batch PR linking. Preserve that choice in the rewritten
+// block while retaining the full-block guard for unrecognized instructions.
+prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[1].map(text => text.replace(
+  'one link_pull_request per PR, full URL, every stack layer, as your next call.',
+  'link_pull_request, or link_pull_requests for several, full URL, every stack layer, as your next call.')));
+
 function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;
   let result = text;

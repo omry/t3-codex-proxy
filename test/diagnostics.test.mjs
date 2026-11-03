@@ -69,7 +69,11 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`PR-wait override: ${prWaiting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`Browser-routing override: ${browserRouting ? 'enabled' : 'disabled'}`));
-    assert.ok(text.includes('Start with "Proxy check passed."'));
+    assert.ok(text.includes('Start with "✅ Proxy check passed."'));
+    assert.ok(text.includes('"❌ Proxy check found a problem."'));
+    assert.ok(text.includes('"❓ Proxy check incomplete."'));
+    assert.ok(text.includes('✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN'));
+    assert.ok(text.includes('Keep the text labels alongside the icons; disabled does not mean FAIL'));
     assert.ok(text.includes('"Override checks (3):" and exactly three bullets'));
     assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the override list'));
     assert.ok(text.includes('Do not show raw counters'));

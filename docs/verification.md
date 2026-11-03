@@ -1,5 +1,36 @@
 # Verification
 
+## Nightly 4119 batch PR linking
+
+Verified on 2026-11-03 with Node.js 24.14.0 and Codex CLI 0.166.0:
+
+- Live `proxy-check` reported T3 `0.1.7-nightly.20261103.4119`. The received
+  PR block offered `link_pull_requests` for several PRs. That changed linking
+  sentence prevented the complete-block match, leaving the PR-wait policy
+  unchanged. Review and browser overrides were present.
+- The new fixture captures the observed PR block and native-delegation bullet.
+  Its other inputs come from the 3991 fixture; their provenance is recorded
+  in `sourceNote`. The regression failed before the fix and passed afterward.
+- Added a guarded match for the observed block. Its replacement preserves the
+  batch-linking choice and restores workflow control over PR waits. Unknown
+  surrounding PR rules still pass through with a content-free warning.
+- All 114 tests and syntax checks pass. Coverage includes all eight override
+  combinations for 4119, disabled passthrough, idempotence, tagged reinjection,
+  batch-linking preservation, and the 4,000-byte context-entry limit.
+- Isolated real-Codex smoke checks pass for 4119 with enabled defaults and
+  all overrides disabled. They use fake local MCP and inference servers and
+  verify initial context, reinjection, tool descriptions, and diagnostic delivery.
+  The sandbox blocked localhost listeners; the checks passed when run with
+  permission to bind localhost outside the sandbox.
+- The diagnostic now requests ✅, ❌, or ❓ beside the overall result and
+  each override check, retaining the text status and enabled/disabled state.
+  All 13 diagnostic tests and syntax checks pass after the format change.
+
+After reloading T3's shared app-server, the live installation check passed on
+4119. The tool reported exact-version test coverage and working MCP discovery.
+The received developer context included all three overrides, including
+workflow-owned PR waits, and the diagnostic supplied the new icon format.
+
 ## Nightly wording regression
 
 Verified on 2026-11-01 with Node.js 24.14.0 and Codex CLI 0.166.0:
