@@ -33,6 +33,8 @@ separate. Automated fixture and isolated real-Codex checks cover these exact rel
 - `0.1.3`
 - `0.1.7-nightly.20261031.3991` (live PR/browser wording; unchanged inputs
   retained from the earlier fixture)
+- `0.1.7-nightly.20261103.4119` (live PR/batch-linking wording and native-delegation
+  bullet; other inputs retained from the 3991 fixture)
 
 New versions within a matching range receive that fix without an untested-version
 warning. The diagnostic describes them as assumed compatible. Exact-version
@@ -89,7 +91,9 @@ reports a short overall result, one installation sentence with the T3 version,
 compatibility qualification, and connection status, then "Override checks (3)"
 with exactly three bullets: review workflow, PR waiting, and browser routing.
 Each bullet shows whether that override is enabled, its PASS/FAIL/UNKNOWN result, and a short
-reason. Installation facts have no PASS labels. It omits raw counters and
+reason. The overall result and each bullet use ✅ for pass, ❌ for failure, and
+❓ for missing evidence. Text labels remain beside the icons; a disabled override
+can still pass. Installation facts have no PASS labels. It omits raw counters and
 internal identifiers unless requested. New releases in a matching version
 range are assumed compatible without an exact-version coverage warning.
 Missing evidence about received guidance or connectivity is UNKNOWN; the check

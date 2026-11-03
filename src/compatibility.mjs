@@ -11,6 +11,7 @@ export const TESTED_VERSIONS = [
   '0.1.3-nightly.20261027.3754',
   '0.1.3',
   '0.1.7-nightly.20261031.3991',
+  '0.1.7-nightly.20261103.4119',
 ];
 
 function parseVersion(value) {

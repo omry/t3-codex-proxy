@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
-const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json']
+const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
 
 for (const fixture of fixtures) {
@@ -58,6 +58,10 @@ for (const fixture of fixtures) {
         assert.ok(!actual.t3_code_runtime.value.includes('do not watch or poll PRs'));
         assert.ok(actual.t3_code_runtime.value.startsWith('<runtime_info>private runtime marker</runtime_info>'));
         assert.ok(actual.t3_code_runtime.value.includes('link_pull_request'));
+        if (fixture.pullRequestInstructions.includes('link_pull_requests for several')) {
+          assert.ok(actual.t3_code_runtime.value.includes(
+            'link_pull_request, or link_pull_requests for several, full URL, every stack layer, as your next call.'));
+        }
         assert.ok(actual.t3_code_runtime.value.includes('unwatch_pull_request'));
       }
       before.params.additionalContext.t3_code_orchestration_01 = actual.t3_code_orchestration_01;
@@ -205,7 +209,7 @@ test('changed PR wording and unsupported versions are preserved with fixed warni
 });
 
 test('nightly matches preserve changed surrounding PR rules and unknown browser sentences', () => {
-  const fixture = fixtures.find(({ sourceVersion }) => sourceVersion === 'v0.1.7-nightly.20261031.3991');
+  const fixture = fixtures.at(-1);
   const events = [];
   const policy = createPolicy(fixture.sourceVersion.slice(1), code => events.push(code), { reviewWorkflow: false });
   const message = { method: 'turn/start', params: { additionalContext: {
