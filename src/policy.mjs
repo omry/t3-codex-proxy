@@ -98,6 +98,13 @@ prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[1].map(text =
   'one link_pull_request per PR, full URL, every stack layer, as your next call.',
   'link_pull_request, or link_pull_requests for several, full URL, every stack layer, as your next call.')));
 
+// Nightly 4580 edits two linking sentences. Keep those edits in the replacement
+// and require the complete observed block, as with the earlier variants.
+prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[2].map(text => text
+  .replace('Host tools do not link for you.', "Host tools don't link for you.")
+  .replace('Skip PRs you only read or review, and PRs named only as background.',
+    'Skip PRs you only read or review and PRs named only as background.')));
+
 function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;
   let result = text;

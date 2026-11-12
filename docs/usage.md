@@ -35,6 +35,8 @@ separate. Automated fixture and isolated real-Codex checks cover these exact rel
   retained from the earlier fixture)
 - `0.1.7-nightly.20261103.4119` (live PR/batch-linking wording and native-delegation
   bullet; other inputs retained from the 3991 fixture)
+- `0.1.10-nightly.20261112.4580` (live PR-linking wording; other inputs retained
+  from the 4119 fixture)
 
 New versions within a matching range receive that fix without an untested-version
 warning. The diagnostic describes them as assumed compatible. Exact-version
