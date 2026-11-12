@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE } from '../src/policy.mjs';
 
 const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
@@ -26,6 +26,11 @@ for (const fixture of fixtures) {
       policy.rewriteDeveloperContext(message);
       const actual = message.params.additionalContext;
       assert.equal(actual.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE), reviewWorkflow);
+      if (fixture.originalReviewText) {
+        assert.equal(actual.t3_code_orchestration_01.value.includes(REVIEW_FIXER_GUIDANCE), reviewWorkflow);
+        assert.equal(actual.t3_code_orchestration_01.value.includes(
+          'Fix small review findings yourself; start no delegate for them.'), !reviewWorkflow);
+      }
       assert.equal(actual.t3_code_runtime.value !== runtime, prWaiting);
       assert.equal(actual.t3_code_tools.value !== browserTools, browserRouting);
       assert.ok(actual.t3_code_tools.value.endsWith('## T3 Code devices\nprivate device marker'));
@@ -125,6 +130,23 @@ for (const fixture of fixtures) {
     });
   }
 }
+
+test('review overrides preserve native routing and the T3 delegate wait contract', () => {
+  const fixture = fixtures.at(-1);
+  const message = { method: 'turn/start', params: { additionalContext: {
+    t3_code_orchestration_01: { kind: 'application', value: fixture.context },
+  } } };
+  createPolicy(fixture.sourceVersion.slice(1)).rewriteDeveloperContext(message);
+  const output = message.params.additionalContext.t3_code_orchestration_01.value;
+  for (const line of fixture.context.split('\n')) {
+    if (line.startsWith('- Subagents:') || line.startsWith('- Follow a running delegate')) {
+      assert.ok(output.includes(line));
+    }
+  }
+  assert.ok(output.includes("Use the workflow's selected native-agent or T3 tools."));
+  assert.ok(output.includes('When using T3 delegates, start fresh reviews with `delegate_task`'));
+  assert.ok(output.includes('When no workflow assigns a fixer, fix small review findings yourself.'));
+});
 
 test('all overrides are enabled when configuration omits them', () => {
   const fixture = fixtures.at(-1);

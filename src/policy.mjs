@@ -2,7 +2,9 @@ import { selectCompatibility } from './compatibility.mjs';
 import { resolveOverrides } from './config.mjs';
 
 // Version-selected, guarded substitutions. Never apply these to user prompts or tool results.
-export const REVIEW_GUIDANCE = "Let the user's review workflow determine review context and reviewer continuity. For a fresh independent review, call `delegate_task` with the review brief and required source material; omit earlier findings, responses, and objections unless the workflow requests them. For a follow-up that needs the same reviewer conversation, use `t3_thread_send` on its `childThreadId` and supply the follow-up context requested by the workflow. Retain returned `taskId` values for tracking. Use a new `clientRequestId` for each new task or follow-up and keep it stable across retries.";
+export const REVIEW_GUIDANCE = "Let the user's review workflow choose available review tools, reviewer context, reviewer continuity, and who fixes findings. Use the workflow's selected native-agent or T3 tools. For a fresh independent review, supply the review brief and required source material; omit earlier findings, responses, and objections unless the workflow requests them. For a follow-up that needs the same reviewer conversation, continue that reviewer with the context requested by the workflow. When using T3 delegates, start fresh reviews with `delegate_task`, continue a reviewer with `t3_thread_send` on its `childThreadId`, and retain returned `taskId` values. Use a new `clientRequestId` for each T3 task or follow-up and keep it stable across retries.";
+
+export const REVIEW_FIXER_GUIDANCE = "Follow the workflow's assignment of review fixes, including small findings. When no workflow assigns a fixer, fix small review findings yourself.";
 
 const legacyRules = {
   context: [[
@@ -23,6 +25,9 @@ const currentRules = {
   context: [[
     'Every new delegate review or re-check is a new `delegate_task` (brief, findings, objections), never a `t3_thread_send`.',
     REVIEW_GUIDANCE,
+  ], [
+    'Fix small review findings yourself; start no delegate for them.',
+    REVIEW_FIXER_GUIDANCE,
   ]],
 };
 

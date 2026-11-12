@@ -50,7 +50,11 @@ guidance through unchanged. These warnings do not stop Codex startup. No
 version or private input is interpolated into the diagnostics.
 
 Newer delegation tool descriptions contain no review rule and are preserved.
-The review fix replaces only the conflicting sentence in orchestration context.
+The review fix lets the workflow choose available review tools, review context,
+reviewer continuity, and the fixer, including for small findings. T3-specific
+review calls apply only when the workflow uses T3 delegates. Without a workflow
+assignment, the parent still fixes small findings itself.
+Known conflicting review sentences are replaced in orchestration context.
 The PR-wait fix rewrites the known runtime PR block and watch-tool description,
 retaining linking rules and unrelated runtime information. Repeat the README installation
 check after upgrading to detect any changed instruction wording.
@@ -62,6 +66,14 @@ interface is not proof that API access is unavailable. Browser automation remain
 available when requested or needed, with T3's shared-browser controls. Older
 versions receive this guidance in their browser-tool block instead. The proxy
 changes instruction delivery; it cannot guarantee that a model follows the guidance.
+
+T3 delegate waiting remains a separate limitation. Its tool results can require
+the parent to end its turn and await a completion notification, and `task_status`
+guidance prohibits reading a running task before that notification. The proxy preserves
+tool-call results and does not supply a delegate timeout or recovery mechanism.
+The PR-wait override does not change this contract. Workflows that require
+bounded delegate waits must use a supported agent path with the required wait
+and recovery capabilities.
 
 ## Overrides and diagnostics
 
@@ -90,18 +102,28 @@ make one read-only `orchestrator_capabilities` call. A rewrite count is not proo
 of the current conversation's context. Process-wide unmatched text does not
 by itself indicate conflicting instructions in this conversation. The agent
 reports a short overall result, one installation sentence with the T3 version,
-compatibility qualification, and connection status, then "Override checks (3)"
-with exactly three bullets: review workflow, PR waiting, and browser routing.
-Each bullet shows whether that override is enabled, its PASS/FAIL/UNKNOWN result, and a short
-reason. The overall result and each bullet use ✅ for pass, ❌ for failure, and
-❓ for missing evidence. Text labels remain beside the icons; a disabled override
-can still pass. Installation facts have no PASS labels. It omits raw counters and
-internal identifiers unless requested. New releases in a matching version
-range are assumed compatible without an exact-version coverage warning.
-Missing evidence about received guidance or connectivity is UNKNOWN; the check
-does not create delegates, watches, schedules, or messages. T3 has no knowledge
-of this diagnostic tool, and neither the proxy nor the diagnostic manages a
-workflow's waits. Existing T3 watch notifications remain unchanged.
+compatibility qualification, and connection status, then "Compatibility checks
+(6):" with exactly six bullets: review context and continuity, PR waiting,
+browser routing, review-tool routing, fixer assignment, and delegate waiting and
+recovery. Checks 1, 4, and 5 use `reviewWorkflow`; check 2 uses `prWaiting`; and
+check 3 uses `browserRouting`. Check 6 is not overridden. Each bullet shows its
+PASS/FAIL/UNKNOWN result and a short reason; checks 1-5 also show whether their
+override is enabled or disabled. The overall result is green only when all six
+checks pass. The overall result and each bullet use ✅ for pass, ❌ for failure,
+and ❓ for missing evidence. A disabled override can still pass. Installation
+facts have no PASS labels. It omits raw counters and internal identifiers unless
+requested. New releases in a matching version range are assumed compatible
+without an exact-version coverage warning. Missing evidence about received
+guidance or connectivity is UNKNOWN.
+
+The delegate-waiting check inspects actual T3 instructions and tool guidance.
+Restrictive end-turn or notification-only guidance that forbids `task_status`
+while a delegate runs is FAIL for workflow compatibility; missing evidence is
+UNKNOWN; PASS requires explicit supported bounded wait, deadline, and recovery
+evidence. The proxy does not fix delegate deadlines or guarantee timers, and it
+preserves tool-call results unchanged. The diagnostic does not create delegates,
+watches, schedules, or messages. T3 has no knowledge of this diagnostic tool,
+and existing T3 watch notifications remain unchanged.
 
 ## Existing conversations
 
