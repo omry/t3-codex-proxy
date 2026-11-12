@@ -9,8 +9,9 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
+import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
 
 const realCodex = process.argv[2];
 if (!realCodex || !path.isAbsolute(realCodex)) throw new Error('Supply an absolute real Codex path.');
@@ -20,6 +21,7 @@ const workspace = path.join(root, 'workspace');
 await mkdir(home); await mkdir(workspace);
 const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process.argv[3]) :
   new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
+const delegateWaitFixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-delegate-wait-guidance-4580.json', import.meta.url), 'utf8'));
 const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
 const sections = fixture.sections ?? [fixture.context];
 const hasPageCondition = sections.some(section => section.includes('names a page or tab'));
@@ -68,6 +70,7 @@ const server = http.createServer(async (request, response) => {
     { name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object', properties: {} } },
     { name: 't3_thread_send', description: fixture.t3_thread_send, inputSchema: { type: 'object', properties: {} } },
     { name: 'watch_pull_request', description: fixture.watch_pull_request, inputSchema: { type: 'object', properties: {} } },
+    { name: 'task_status', description: delegateWaitFixture.task_status, inputSchema: { type: 'object', properties: {} } },
   ] });
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Not implemented in isolated fixture' } }));
@@ -149,10 +152,13 @@ requires_openai_auth = false
     assert.deepEqual(tool.inputSchema, { type: 'object', properties: {} });
   }
   assert.ok(t3.tools['proxy-check'], 'Local diagnostic tool loaded by real Codex');
+  const expectWorkflowWait = Boolean(fixture.originalReviewText) && overrides.reviewWorkflow;
+  assert.equal(t3.tools.task_status.description.includes(DELEGATE_WAITING_GUIDANCE), expectWorkflowWait);
+  if (!expectWorkflowWait) assert.equal(t3.tools.task_status.description, delegateWaitFixture.task_status);
   assert.equal(t3.tools.watch_pull_request.description !== fixture.watch_pull_request, overrides.prWaiting);
   const runTurn = async additionalContext => {
     const result = await call('turn/start', { threadId: thread.thread.id,
-      input: [{ type: 'text', text: requestDiagnostic ? 'Call proxy-check and report its diagnostics.' : 'Reply with a short confirmation. Do not use tools.' }],
+      input: [{ type: 'text', text: requestDiagnostic ? 'proxy-check' : 'Reply with a short confirmation. Do not use tools.' }],
       ...(additionalContext ? { additionalContext } : {}),
     });
     const deadline = Date.now() + 20000;
@@ -171,7 +177,12 @@ requires_openai_auth = false
   assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
   const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
   assert.equal(developerText(modelRequests[0]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[0]).includes(DELEGATE_WAITING_GUIDANCE), expectWorkflowWait);
   assert.equal(developerText(modelRequests[0]).includes(oldBullet), !overrides.reviewWorkflow);
+  if (fixture.originalReviewText) {
+    assert.equal(developerText(modelRequests[0]).includes(REVIEW_FIXER_GUIDANCE), overrides.reviewWorkflow);
+    assert.equal(developerText(modelRequests[0]).includes('Fix small review findings yourself; start no delegate for them.'), !overrides.reviewWorkflow);
+  }
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
@@ -183,12 +194,19 @@ requires_openai_auth = false
   assert.equal(modelRequests.length, 2);
   assert.ok(JSON.stringify(modelRequests[1]).includes('compaction-reinjection-marker'));
   assert.equal(developerText(modelRequests[1]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
+  assert.equal(developerText(modelRequests[1]).includes(DELEGATE_WAITING_GUIDANCE), expectWorkflowWait);
   assert.equal(developerText(modelRequests[1]).includes(oldBullet), !overrides.reviewWorkflow);
+  if (fixture.originalReviewText) {
+    assert.equal(developerText(modelRequests[1]).includes(REVIEW_FIXER_GUIDANCE), overrides.reviewWorkflow);
+    assert.equal(developerText(modelRequests[1]).includes('Fix small review findings yourself; start no delegate for them.'), !overrides.reviewWorkflow);
+  }
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   requestDiagnostic = true;
-  await runTurn();
+  await runTurn(context);
+  assert.ok(developerText(modelRequests[2]).includes(PROXY_CHECK_REQUEST_GUIDANCE),
+    'Exact diagnostic request receives the tool-discovery hint before inference');
   assert.ok(diagnosticCalled);
   const diagnosticOutput = modelRequests.at(-1).input.find(item => item.type === 'custom_tool_call_output' && item.call_id === 'proxy_check_smoke');
   assert.ok(diagnosticOutput, 'Codex sends proxy-check output into the next inference');
@@ -199,16 +217,19 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
     diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
   assert.ok(diagnosticText.includes('Proxy check passed.'));
-  assert.ok(diagnosticText.includes('Override checks (3):'));
+  assert.ok(diagnosticText.includes('Compatibility checks (6):'));
+  assert.ok(diagnosticText.includes('Delegate waiting and recovery'));
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
   console.log(JSON.stringify({ result: 'passed', t3Version, overrides, codex: initialized.userAgent, checks: [
     'isolated real Codex thread starts through wrapper', 'fake MCP authenticates through local proxy',
     'configured tool-description rewrites match explicit settings',
+    'workflow delegate-wait and task_status guidance reaches real Codex when enabled',
     'tool input schemas are unchanged',
     'rewritten developer context reaches fake model on turn/start',
     'rewritten developer reinjection reaches fake model on next turn',
+    'bare proxy-check request receives turn-specific tool-discovery context',
     'agent calls local proxy-check and its diagnostic checklist reaches the next inference',
     'all model responses are local fixtures; no live T3 tool called',
   ] }, null, 2));

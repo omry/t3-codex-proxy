@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { JsonLines } from './framing.mjs';
 import { createPolicy } from './policy.mjs';
 import { startMcpProxy } from './mcp-proxy.mjs';
+import { PROXY_CHECK_REQUEST_GUIDANCE } from './diagnostics.mjs';
 
 const WRAPPER_PATH = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
 
@@ -19,6 +20,14 @@ async function assertNotRecursive(realCodex) {
 
 export function rewriteClientMessage(message, proxy, report, policy) {
   policy?.rewriteDeveloperContext(message);
+  const params = message?.params;
+  const input = params?.input;
+  if (message?.method === 'turn/start' && Array.isArray(input) && input.length === 1 &&
+      input[0]?.type === 'text' && typeof input[0].text === 'string' &&
+      ['proxy-check', 'proxy_check'].includes(input[0].text.trim()) &&
+      params.additionalContext?.t3_code_runtime?.kind === 'application') {
+    params.additionalContext.t3_codex_proxy_check = { kind: 'application', value: PROXY_CHECK_REQUEST_GUIDANCE };
+  }
   if (!['thread/start', 'thread/resume', 'thread/fork'].includes(message?.method)) return message;
   const config = message.params?.config;
   if (!config || typeof config !== 'object') return message;

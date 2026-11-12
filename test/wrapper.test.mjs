@@ -9,10 +9,47 @@ import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
 import { BROWSER_ROUTING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
+import { rewriteClientMessage } from '../src/wrapper.mjs';
 
 const binary = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
 const fake = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
+
+test('exact diagnostic requests gain tool-discovery context without changing user input', () => {
+  for (const text of ['proxy-check', 'proxy_check', '  proxy-check\n']) {
+    const message = { method: 'turn/start', params: {
+      input: [{ type: 'text', text }],
+      additionalContext: { t3_code_runtime: { kind: 'application', value: 'existing runtime context' } },
+    } };
+    const before = structuredClone(message);
+    rewriteClientMessage(message);
+    assert.equal(message.params.additionalContext.t3_codex_proxy_check.value, PROXY_CHECK_REQUEST_GUIDANCE);
+    assert.deepEqual(message.params.input, before.params.input);
+    assert.deepEqual(message.params.additionalContext.t3_code_runtime, before.params.additionalContext.t3_code_runtime);
+    const once = structuredClone(message);
+    rewriteClientMessage(message);
+    assert.deepEqual(message, once);
+  }
+});
+
+test('diagnostic routing leaves discussion, attachments, non-T3 contexts and reinjection unchanged', () => {
+  const base = { method: 'turn/start', params: {
+    input: [{ type: 'text', text: 'proxy-check' }],
+    additionalContext: { t3_code_runtime: { kind: 'application', value: 'existing runtime context' } },
+  } };
+  const cases = [];
+  for (const text of ['explain proxy-check', 'do not run proxy-check', '`proxy-check`', 'proxy-check example.com']) {
+    const message = structuredClone(base); message.params.input[0].text = text; cases.push(message);
+  }
+  const attachment = structuredClone(base); attachment.params.input.push({ type: 'localImage', path: '/tmp/example.png' }); cases.push(attachment);
+  const missing = structuredClone(base); delete missing.params.additionalContext; cases.push(missing);
+  const untrusted = structuredClone(base); untrusted.params.additionalContext.t3_code_runtime.kind = 'untrusted'; cases.push(untrusted);
+  const reinjection = structuredClone(base); reinjection.method = 'thread/inject_items'; cases.push(reinjection);
+  for (const message of cases) {
+    const before = structuredClone(message); rewriteClientMessage(message); assert.deepEqual(message, before);
+  }
+});
 
 function launch(t, args = ['app-server'], realCodex = fake, t3Version = fixture.sourceVersion.slice(1)) {
   const child = spawn(process.execPath, [binary, ...args], { env: { ...process.env, T3_CODEX_PROXY_REAL_CODEX: realCodex }, stdio: ['pipe', 'pipe', 'pipe'] });

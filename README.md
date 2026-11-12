@@ -8,9 +8,10 @@ T3 watches that do not preserve the workflow's timeout recovery.
 An observed browser-selection failure also sent an agent to a login page when an authenticated
 API, CLI, or connector can already complete the task.
 
-The proxy rewrites those rules so your workflow controls reviews, PR waits,
-and tool selection. All three fixes are enabled by default and can be disabled
-independently. T3 itself stays unmodified.
+The proxy rewrites those rules so your workflow controls reviews, delegate
+waits, PR waits, and tool selection. Three configuration flags enable these
+overrides by default and let you disable each group independently. T3 itself
+stays unmodified.
 
 Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
 [regression report #24877](https://github.com/pingdotgg/t3code/issues/24877),
@@ -57,7 +58,20 @@ After restarting T3, open a new conversation using that Codex provider and paste
 proxy-check
 ```
 
-The agent checks the three overrides and reports version compatibility and the T3 connection separately.
+`proxy_check` is also accepted. For an exact diagnostic request, the wrapper
+adds a turn-specific tool-discovery hint. The agent must still invoke the tool;
+the wrapper does not generate an assistant reply directly.
+
+The agent reports six compatibility checks from the three configured overrides.
+Version compatibility and the T3 connection remain separate installation facts.
+
+![Actual proxy-check output in T3 showing all six compatibility checks passing](docs/images/proxy-check.png)
+
+Captured from T3 on 2026-11-12 with all overrides enabled. PASS confirms the
+guidance the agent received. It does not prove that a live delegate recovers
+from a timeout; that behavior was not exercised. A failed check or missing
+evidence prevents an overall green result. A disabled override can pass when
+the agent confirms that T3's original guidance is preserved.
 
 ## Override configuration
 
@@ -74,8 +88,12 @@ In `config.local.json`:
 }
 ```
 
-- `reviewWorkflow`: let the user's workflow choose fresh-review context and
-  reviewer continuity.
+`realCodex` must be the absolute path to the original Codex executable, not
+the wrapper. The `T3_CODEX_PROXY_REAL_CODEX` environment variable takes priority
+over this value when set.
+
+- `reviewWorkflow`: let the user's workflow choose review tools, context,
+  reviewer continuity, fixer assignment, and bounded delegate waits and recovery.
 - `prWaiting`: preserve workflow-owned PR polling, deadlines, retry limits,
   recovery, and evidence. Retain PR linking; use T3 watching when the workflow
   selects it or specifies no waiting mechanism.
@@ -84,6 +102,14 @@ In `config.local.json`:
   request browser automation. Check existing authenticated tools before asking
   for browser login. Retain T3's shared-browser controls when browser automation
   is requested or needed.
+
+The six checks map to these three flags:
+
+| Flag | Compatibility checks |
+| --- | --- |
+| `reviewWorkflow` | Review context and continuity; review-tool routing; fixer assignment; delegate waiting and recovery |
+| `prWaiting` | PR waiting |
+| `browserRouting` | Browser routing |
 
 All three default to `true`, including in existing configs without `overrides`.
 Set any one to `false` to preserve T3's original guidance for that behavior.

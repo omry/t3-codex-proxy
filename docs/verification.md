@@ -1,5 +1,72 @@
 # Verification
 
+## Workflow-owned delegate waits
+
+The source now replaces the two observed delegate no-poll sentences and the
+known `task_status` restriction under the existing `reviewWorkflow` switch.
+It preserves cancellation, schemas and tool results. The workflow retains
+control of supported bounded waits and timeout recovery; a timeout keeps the
+same child identity and does not imply cancellation or completion. The sixth
+diagnostic check now reports this switch's enabled/disabled state and checks
+actual received guidance, rather than reporting an independent unimplemented
+override. It still requires evidence before PASS.
+
+All 130 tests and syntax checks pass. Enabled and all-disabled isolated
+real-Codex smoke checks verify context, reinjection and `task_status`
+descriptions at inference. The fixture matrix covers the earlier no-poll
+wording; a separate fixture records the live 4580 wording and status-tool text.
+Regression checks retain cancellation rules, output schemas, task identity,
+timeout fields and the original `next` value. Smoke responses use a fake model;
+no live delegated task or timeout-recovery behavior was exercised.
+
+The subsequent live `proxy-check` received the replacement in both developer
+instructions and the `task_status` description and reported all six checks
+PASS. This verifies active guidance, not actual delegate timeout recovery.
+The shared proxy was not restarted for this change. Earlier live checks below
+used the preceding source and still found the delegate-wait conflict.
+
+## Diagnostic request discovery
+
+A fresh T3 conversation on 2026-11-12 asked which proxy `proxy-check` referred
+to and made no tool calls. Advertising the diagnostic in MCP discovery alone
+did not reliably map that short request to the tool.
+
+The wrapper now adds a tool-discovery hint for exact `proxy-check` and
+`proxy_check` requests with T3 application runtime context. All 126 tests and
+syntax checks pass. Enabled and all-disabled real-Codex smoke checks verify
+that the hint reaches inference before the bare diagnostic request, and that
+the tool result reaches the next inference. Those smoke checks use a fake
+model; they verify delivery, not a live model's decision to call the tool.
+The hint was subsequently observed in the resumed development conversation,
+where `proxy-check` invoked the diagnostic. Recognition in a fresh conversation
+remains unverified.
+
+## Review tools and fixer assignment (earlier checkpoint)
+
+Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
+
+- The review replacement now follows the workflow's choice of available native
+  or T3 review tools. T3 task and follow-up calls apply only to T3 delegates.
+- The known small-finding instruction now follows the workflow's assigned
+  fixer. The parent fixes small findings when no workflow assigns a fixer.
+- All 124 tests and syntax checks pass. The fixture matrix checks enabled and
+  disabled fixer guidance, and existing tests cover reinjection, idempotence,
+  schemas, unrelated instructions, and the 4,000-byte context-entry limit.
+- Isolated real-Codex checks pass for 4580 with all overrides enabled and all
+  disabled. Both initial inference and tagged reinjection receive the expected
+  fixer guidance. These checks use fake local MCP and inference servers.
+- The current source diagnostic expands the checklist to six compatibility
+  checks, including an independent delegate-waiting check. This source change
+  is not live-verified yet; the running proxy still serves the prior checklist.
+
+After reloading the shared app-server, live `proxy_check` passed on 4580.
+The latest received developer context lets the workflow choose native or T3
+review tools and assign the fixer for small findings. The earlier tool-routing
+conflict no longer blocks AWD's native review path.
+
+Delegate waiting remains unresolved. The proxy continues to preserve tool-call
+results and does not implement delegate deadlines or timeout recovery.
+
 ## Nightly 4580 linking wording
 
 Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
@@ -21,8 +88,8 @@ Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
   reinjection, tool descriptions and diagnostic delivery. The complete suite
   and smoke checks required permission to bind localhost outside the sandbox.
 
-Live activation of this change has not been verified. T3 must reload its shared
-app-server before a new `proxy_check` can confirm the received instructions.
+After reloading the shared app-server, live `proxy_check` passed on 4580 and
+confirmed that workflow-owned PR waits are preserved in the received guidance.
 
 ## Nightly 4119 batch PR linking
 

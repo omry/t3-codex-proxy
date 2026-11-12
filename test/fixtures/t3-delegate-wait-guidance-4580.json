@@ -1,0 +1,6 @@
+{
+  "sourceVersion": "v0.1.10-nightly.20261112.4580",
+  "sourceNote": "Observed developer-context wait prohibition and task_status description in the live T3 tool catalog on 2026-11-12. Other fixtures retain their originally captured wording.",
+  "context": "Follow a running delegate's `next`. Don't poll it (`task_status`, `sleep`, watchers, Monitor, ScheduleWakeup). Stop a delegate run you replace or no longer need with `task_cancel`, never `t3_thread_interrupt` on a `childThreadId`.",
+  "task_status": "Read one delegated task you started. Do not call it on a running task before its completion wakes you. `workState`: working, waiting_for_children, result_available. A finished turn with live child work is not done. `summary`: final result. Reading it marks it delivered."
+}
