@@ -2,7 +2,16 @@ import { selectCompatibility } from './compatibility.mjs';
 import { resolveOverrides } from './config.mjs';
 
 // Version-selected, guarded substitutions. Never apply these to user prompts or tool results.
-export const REVIEW_GUIDANCE = "Let the user's review workflow determine review context and reviewer continuity. For a fresh independent review, call `delegate_task` with the review brief and required source material; omit earlier findings, responses, and objections unless the workflow requests them. For a follow-up that needs the same reviewer conversation, use `t3_thread_send` on its `childThreadId` and supply the follow-up context requested by the workflow. Retain returned `taskId` values for tracking. Use a new `clientRequestId` for each new task or follow-up and keep it stable across retries.";
+export const REVIEW_GUIDANCE = "Let the user's review workflow choose available review tools, reviewer context, reviewer continuity, and who fixes findings. Use the workflow's selected native-agent or T3 tools. For a fresh independent review, supply the review brief and required source material; omit earlier findings, responses, and objections unless the workflow requests them. For a follow-up that needs the same reviewer conversation, continue that reviewer with the context requested by the workflow. When using T3 delegates, start fresh reviews with `delegate_task`, continue a reviewer with `t3_thread_send` on its `childThreadId`, and retain returned `taskId` values. Use a new `clientRequestId` for each T3 task or follow-up and keep it stable across retries.";
+
+export const REVIEW_FIXER_GUIDANCE = "Follow the workflow's assignment of review fixes, including small findings. When no workflow assigns a fixer, fix small review findings yourself.";
+
+export const DELEGATE_WAITING_GUIDANCE = "Let the user's workflow control delegate waits, deadlines, retries, recovery, and retained evidence. Use available bounded wait operations or workflow-paced task_status checks for the same taskId. A workflow-owned wait takes priority over a next suggestion to end the turn; keep tool results unchanged. A wait timeout does not cancel the child or prove completion: retain its identity, inspect its state, and follow the workflow's recovery or cancellation rules without launching a duplicate. When no workflow owns the wait, follow the delegate's next and use T3 completion notifications instead of polling.";
+
+const delegateWaitingContextRules = ["Do not", "Don't"].map(prohibition => [
+  `Follow a running delegate's \`next\`. ${prohibition} poll it (\`task_status\`, \`sleep\`, watchers, Monitor, ScheduleWakeup).`,
+  DELEGATE_WAITING_GUIDANCE,
+]);
 
 const legacyRules = {
   context: [[
@@ -23,6 +32,13 @@ const currentRules = {
   context: [[
     'Every new delegate review or re-check is a new `delegate_task` (brief, findings, objections), never a `t3_thread_send`.',
     REVIEW_GUIDANCE,
+  ], [
+    'Fix small review findings yourself; start no delegate for them.',
+    REVIEW_FIXER_GUIDANCE,
+  ], ...delegateWaitingContextRules],
+  task_status: [[
+    'Do not call it on a running task before its completion wakes you.',
+    DELEGATE_WAITING_GUIDANCE,
   ]],
 };
 
@@ -110,7 +126,7 @@ function rewriteGuidance(text, scope, rules, report, feature) {
   let result = text;
   for (const [before, after] of rules[scope] ?? []) result = result.replaceAll(before, after);
   if (result !== text) report('guidance_rewritten');
-  else if (feature !== 'reviewWorkflow' || /\breview/i.test(text)) {
+  else if (feature !== 'reviewWorkflow' || /\breview|running delegate/i.test(text) || (scope === 'task_status' && rules[scope])) {
     const replacements = (rules[scope] ?? []).map(([, after]) => after);
     const warning = { reviewWorkflow: 'unrecognized_review_guidance', prWaiting: 'unrecognized_pr_wait_guidance',
       browserRouting: 'unrecognized_browser_routing_guidance' }[feature];
@@ -180,7 +196,7 @@ export function createPolicy(version, report = () => {}, overrides) {
     return value;
   };
   const rewriteTool = (name, text) => {
-    if (settings.reviewWorkflow && (name === 'delegate_task' || name === 't3_thread_send')) return apply(text, name, 'reviewWorkflow');
+    if (settings.reviewWorkflow && ['delegate_task', 't3_thread_send', 'task_status'].includes(name)) return apply(text, name, 'reviewWorkflow');
     if (settings.prWaiting && name === 'watch_pull_request') return apply(text, name, 'prWaiting');
     return text;
   };

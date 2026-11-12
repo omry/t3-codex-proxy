@@ -61,9 +61,16 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(data.observations.prWaiting.unrecognized, 0);
     assert.equal(data.observations.browserRouting.rewrites > 0, browserRouting);
     assert.equal(data.observations.browserRouting.unrecognized, 0);
+    assert.deepEqual(Object.keys(data.expected).sort(), [
+      'browserRouting', 'delegateWaitingRecovery', 'fixerAssignment',
+      'prWaiting', 'reviewToolRouting', 'reviewWorkflow',
+    ]);
     assert.ok(data.expected.reviewWorkflow.includes(reviewWorkflow ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.prWaiting.includes(prWaiting ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.browserRouting.includes(browserRouting ? 'authenticated API, CLI, or connector' : 'preserves T3'));
+    assert.ok(data.expected.reviewToolRouting.includes(reviewWorkflow ? 'available review tools' : 'preserves T3'));
+    assert.ok(data.expected.fixerAssignment.includes(reviewWorkflow ? 'assigns who fixes' : 'preserves T3'));
+    assert.ok(data.expected.delegateWaitingRecovery.includes(reviewWorkflow ? 'bounded delegate waits' : 'preserves T3'));
     const text = check.result.content[0].text;
     assert.ok(text.startsWith('Proxy check: local facts\nT3 version: 0.1.3\nCompatibility: covered by exact-version automated tests.'));
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
@@ -73,9 +80,20 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes('"❌ Proxy check found a problem."'));
     assert.ok(text.includes('"❓ Proxy check incomplete."'));
     assert.ok(text.includes('✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN'));
-    assert.ok(text.includes('Keep the text labels alongside the icons; disabled does not mean FAIL'));
-    assert.ok(text.includes('"Override checks (3):" and exactly three bullets'));
-    assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the override list'));
+    assert.ok(text.includes('Keep the text labels alongside the icons; a disabled override does not mean FAIL'));
+    assert.ok(text.includes('There are exactly six compatibility checks'));
+    assert.ok(text.includes('"Compatibility checks (6):" and exactly six bullets'));
+    for (const label of [
+      'Review context and continuity', 'PR waiting', 'Browser routing',
+      'Review-tool routing', 'Fixer assignment', 'Delegate waiting and recovery',
+    ]) assert.ok(text.includes(`"${label}"`), label);
+    assert.ok(!text.includes('"not overridden"'));
+    assert.ok(text.includes('Checks 1, 4, 5, and 6 use the reviewWorkflow override'));
+    assert.ok(text.includes('Restrictive guidance that requires ending the turn'));
+    assert.ok(text.includes('Do not claim that this proxy fixes delegation deadlines or guarantees timers'));
+    assert.ok(text.includes('only when the installation works and all six compatibility checks pass'));
+    assert.ok(!text.includes('"Override checks (3):"'));
+    assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the compatibility list'));
     assert.ok(text.includes('Do not show raw counters'));
     assert.ok(!text.includes('"rewrites":') && !text.includes('"tested":'));
     assert.ok(text.includes('Call orchestrator_capabilities once'));
@@ -88,6 +106,21 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(Number(requests[1].headers['content-length']), Buffer.byteLength(JSON.stringify(requests[1].message)));
   });
 }
+
+test('delegate status responses preserve timeout, cancellation and next fields verbatim', async t => {
+  const result = { content: [{ type: 'text', text: 'running delegate result' }], structuredContent: {
+    taskId: 'same-task', status: 'running', waitTimedOut: true, workState: 'working',
+    next: 'Completion wakes this thread, so end your turn. Do not wait on it or poll it.',
+    hasPendingChildRuns: true, pendingApproval: null,
+  } };
+  const { request } = await setup(t, undefined, (req, res, message) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+  });
+  const response = await (await request('POST', { jsonrpc: '2.0', id: 20, method: 'tools/call',
+    params: { name: 'task_status', arguments: { taskId: 'same-task' } } })).json();
+  assert.deepEqual(response.result, result);
+});
 
 test('new nightlies use open-ended support without an exact-version coverage warning', () => {
   const events = [];

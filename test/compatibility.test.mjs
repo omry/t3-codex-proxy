@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FIX_SETS, TESTED_VERSIONS, matchesVersion, selectCompatibility } from '../src/compatibility.mjs';
-import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
 
 const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
@@ -64,7 +64,9 @@ for (const fixture of fixtures) {
       context.t3_code_orchestration_99 = { kind: 'untrusted', value: fixture.context };
       const message = { method: 'turn/start', params: { additionalContext: structuredClone(context), input: [fixture.context] } };
       policy.rewriteDeveloperContext(message);
-      assert.equal(message.params.additionalContext.t3_code_orchestration_01.value, fixture.context.replace(original, replacement));
+      assert.equal(message.params.additionalContext.t3_code_orchestration_01.value, fixture.context.replace(original, replacement)
+        .replace('Fix small review findings yourself; start no delegate for them.', REVIEW_FIXER_GUIDANCE)
+        .replace("Follow a running delegate's `next`. Do not poll it (`task_status`, `sleep`, watchers, Monitor, ScheduleWakeup).", DELEGATE_WAITING_GUIDANCE));
       const expected = structuredClone(context);
       expected.t3_code_orchestration_01.value = message.params.additionalContext.t3_code_orchestration_01.value;
       for (const [key, entry] of Object.entries(context)) {
