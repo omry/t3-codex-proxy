@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
 
 const realCodex = process.argv[2];
@@ -172,6 +172,10 @@ requires_openai_auth = false
   const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
   assert.equal(developerText(modelRequests[0]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[0]).includes(oldBullet), !overrides.reviewWorkflow);
+  if (fixture.originalReviewText) {
+    assert.equal(developerText(modelRequests[0]).includes(REVIEW_FIXER_GUIDANCE), overrides.reviewWorkflow);
+    assert.equal(developerText(modelRequests[0]).includes('Fix small review findings yourself; start no delegate for them.'), !overrides.reviewWorkflow);
+  }
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
@@ -184,6 +188,10 @@ requires_openai_auth = false
   assert.ok(JSON.stringify(modelRequests[1]).includes('compaction-reinjection-marker'));
   assert.equal(developerText(modelRequests[1]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[1]).includes(oldBullet), !overrides.reviewWorkflow);
+  if (fixture.originalReviewText) {
+    assert.equal(developerText(modelRequests[1]).includes(REVIEW_FIXER_GUIDANCE), overrides.reviewWorkflow);
+    assert.equal(developerText(modelRequests[1]).includes('Fix small review findings yourself; start no delegate for them.'), !overrides.reviewWorkflow);
+  }
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
@@ -199,7 +207,8 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
     diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
   assert.ok(diagnosticText.includes('Proxy check passed.'));
-  assert.ok(diagnosticText.includes('Override checks (3):'));
+  assert.ok(diagnosticText.includes('Compatibility checks (6):'));
+  assert.ok(diagnosticText.includes('Delegate waiting and recovery'));
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));

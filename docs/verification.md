@@ -1,5 +1,31 @@
 # Verification
 
+## Review tools and fixer assignment
+
+Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
+
+- The review replacement now follows the workflow's choice of available native
+  or T3 review tools. T3 task and follow-up calls apply only to T3 delegates.
+- The known small-finding instruction now follows the workflow's assigned
+  fixer. The parent fixes small findings when no workflow assigns a fixer.
+- All 124 tests and syntax checks pass. The fixture matrix checks enabled and
+  disabled fixer guidance, and existing tests cover reinjection, idempotence,
+  schemas, unrelated instructions, and the 4,000-byte context-entry limit.
+- Isolated real-Codex checks pass for 4580 with all overrides enabled and all
+  disabled. Both initial inference and tagged reinjection receive the expected
+  fixer guidance. These checks use fake local MCP and inference servers.
+- The current source diagnostic expands the checklist to six compatibility
+  checks, including an independent delegate-waiting check. This source change
+  is not live-verified yet; the running proxy still serves the prior checklist.
+
+After reloading the shared app-server, live `proxy_check` passed on 4580.
+The latest received developer context lets the workflow choose native or T3
+review tools and assign the fixer for small findings. The earlier tool-routing
+conflict no longer blocks AWD's native review path.
+
+Delegate waiting remains unresolved. The proxy continues to preserve tool-call
+results and does not implement delegate deadlines or timeout recovery.
+
 ## Nightly 4580 linking wording
 
 Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
@@ -21,8 +47,8 @@ Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
   reinjection, tool descriptions and diagnostic delivery. The complete suite
   and smoke checks required permission to bind localhost outside the sandbox.
 
-Live activation of this change has not been verified. T3 must reload its shared
-app-server before a new `proxy_check` can confirm the received instructions.
+After reloading the shared app-server, live `proxy_check` passed on 4580 and
+confirmed that workflow-owned PR waits are preserved in the received guidance.
 
 ## Nightly 4119 batch PR linking
 

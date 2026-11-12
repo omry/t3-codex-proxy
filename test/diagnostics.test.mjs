@@ -61,9 +61,16 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(data.observations.prWaiting.unrecognized, 0);
     assert.equal(data.observations.browserRouting.rewrites > 0, browserRouting);
     assert.equal(data.observations.browserRouting.unrecognized, 0);
+    assert.deepEqual(Object.keys(data.expected).sort(), [
+      'browserRouting', 'delegateWaitingRecovery', 'fixerAssignment',
+      'prWaiting', 'reviewToolRouting', 'reviewWorkflow',
+    ]);
     assert.ok(data.expected.reviewWorkflow.includes(reviewWorkflow ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.prWaiting.includes(prWaiting ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.browserRouting.includes(browserRouting ? 'authenticated API, CLI, or connector' : 'preserves T3'));
+    assert.ok(data.expected.reviewToolRouting.includes(reviewWorkflow ? 'available review tools' : 'preserves T3'));
+    assert.ok(data.expected.fixerAssignment.includes(reviewWorkflow ? 'assigns who fixes' : 'preserves T3'));
+    assert.ok(data.expected.delegateWaitingRecovery.includes('No override applies'));
     const text = check.result.content[0].text;
     assert.ok(text.startsWith('Proxy check: local facts\nT3 version: 0.1.3\nCompatibility: covered by exact-version automated tests.'));
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
@@ -73,9 +80,19 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes('"❌ Proxy check found a problem."'));
     assert.ok(text.includes('"❓ Proxy check incomplete."'));
     assert.ok(text.includes('✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN'));
-    assert.ok(text.includes('Keep the text labels alongside the icons; disabled does not mean FAIL'));
-    assert.ok(text.includes('"Override checks (3):" and exactly three bullets'));
-    assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the override list'));
+    assert.ok(text.includes('Keep the text labels alongside the icons; a disabled override does not mean FAIL'));
+    assert.ok(text.includes('There are exactly six compatibility checks'));
+    assert.ok(text.includes('"Compatibility checks (6):" and exactly six bullets'));
+    for (const label of [
+      'Review context and continuity', 'PR waiting', 'Browser routing',
+      'Review-tool routing', 'Fixer assignment', 'Delegate waiting and recovery',
+    ]) assert.ok(text.includes(`"${label}"`), label);
+    assert.ok(text.includes('"not overridden"'));
+    assert.ok(text.includes('Restrictive guidance that requires ending the turn'));
+    assert.ok(text.includes('Do not claim that this proxy fixes delegation deadlines or guarantees timers'));
+    assert.ok(text.includes('only when the installation works and all six compatibility checks pass'));
+    assert.ok(!text.includes('"Override checks (3):"'));
+    assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the compatibility list'));
     assert.ok(text.includes('Do not show raw counters'));
     assert.ok(!text.includes('"rewrites":') && !text.includes('"tested":'));
     assert.ok(text.includes('Call orchestrator_capabilities once'));

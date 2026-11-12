@@ -57,7 +57,7 @@ After restarting T3, open a new conversation using that Codex provider and paste
 proxy-check
 ```
 
-The agent checks the three overrides and reports version compatibility and the T3 connection separately.
+The agent reports the three configured overrides as five compatibility checks, plus an independent delegate-waiting check. Version compatibility and the T3 connection remain separate installation facts.
 
 ## Override configuration
 
