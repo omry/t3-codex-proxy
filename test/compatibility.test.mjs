@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { FIX_SETS, TESTED_VERSIONS, matchesVersion, selectCompatibility } from '../src/compatibility.mjs';
 import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
-const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json']
+const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
 
 test('inclusive open, bounded and exact ranges use semantic version precedence', () => {

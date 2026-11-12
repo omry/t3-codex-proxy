@@ -1,5 +1,29 @@
 # Verification
 
+## Nightly 4580 linking wording
+
+Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
+
+- Live `proxy_check` reported T3 `0.1.10-nightly.20261112.4580`. The received
+  PR block changed two linking sentences, preventing the complete-block match.
+  Review and browser overrides were present; conflicting PR-wait rules remained.
+- The new fixture records that observed PR block. Its other inputs come from
+  the 4119 fixture, with provenance recorded in `sourceNote`. The regression
+  failed before the fix and passed afterward.
+- Added an exact guarded variant that preserves the new linking text and
+  restores workflow control over PR waits. Unknown surrounding rules still
+  pass through with a content-free warning.
+- All 123 tests and syntax checks pass. The new fixture covers all eight
+  override combinations, disabled passthrough, idempotence, tagged reinjection,
+  linking-text preservation and the 4,000-byte context-entry limit.
+- Isolated real-Codex smoke checks pass with enabled defaults and all overrides
+  disabled. Local fake MCP and inference servers verify initial context,
+  reinjection, tool descriptions and diagnostic delivery. The complete suite
+  and smoke checks required permission to bind localhost outside the sandbox.
+
+Live activation of this change has not been verified. T3 must reload its shared
+app-server before a new `proxy_check` can confirm the received instructions.
+
 ## Nightly 4119 batch PR linking
 
 Verified on 2026-11-03 with Node.js 24.14.0 and Codex CLI 0.166.0:

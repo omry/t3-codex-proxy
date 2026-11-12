@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createPolicy, REVIEW_GUIDANCE } from '../src/policy.mjs';
 
-const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json']
+const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
 
 for (const fixture of fixtures) {
@@ -63,6 +63,11 @@ for (const fixture of fixtures) {
             'link_pull_request, or link_pull_requests for several, full URL, every stack layer, as your next call.'));
         }
         assert.ok(actual.t3_code_runtime.value.includes('unwatch_pull_request'));
+        if (fixture.pullRequestInstructions.includes("Host tools don't link for you.")) {
+          assert.ok(actual.t3_code_runtime.value.includes("Host tools don't link for you."));
+          assert.ok(actual.t3_code_runtime.value.includes(
+            'Skip PRs you only read or review and PRs named only as background.'));
+        }
       }
       before.params.additionalContext.t3_code_orchestration_01 = actual.t3_code_orchestration_01;
       before.params.additionalContext.t3_code_runtime = actual.t3_code_runtime;
