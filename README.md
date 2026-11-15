@@ -63,9 +63,10 @@ adds a turn-specific tool-discovery hint. The agent must still invoke the tool;
 the wrapper does not generate an assistant reply directly.
 
 The agent reports six compatibility checks from the three configured overrides.
-The diagnostic reports one status row for every configured writable root. Each
-row separates proxy-process access from the Codex-turn result, then asks the
-agent to run a create/delete marker test for the end-to-end sandbox result.
+The diagnostic reports one row for every configured writable root and asks the
+agent to run a create/delete marker test in the current turn. Each row has one
+status symbol: `✅` means both the proxy process and Codex turn can write;
+`❌` or `❓` is followed by plain text naming the failed or missing check.
 The proxy-side status alone does not prove Codex turn-sandbox access.
 Version compatibility and the T3 connection remain separate installation facts.
 

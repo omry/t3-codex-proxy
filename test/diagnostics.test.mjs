@@ -135,12 +135,29 @@ test('proxy-check supplies an agent-side writable-root test when roots are confi
   });
   assert.equal(result.structuredContent.writableRoots.agentCheck, 'required');
   assert.deepEqual(result.structuredContent.writableRoots.entries, [{
-    path: '/tmp/root with spaces', processWritable: true, agentCheck: 'required',
+    path: '/tmp/root with spaces', processWritable: true, status: 'pending', agentCheck: 'required',
   }]);
   assert.ok(result.content[0].text.includes('Sandbox write check: pending agent verification for 1 configured root(s).'));
-  assert.ok(result.content[0].text.includes('Writable roots (per directory):\n- /tmp/root with spaces: ✅ proxy writable; ❓ Codex turn pending marker test'));
+  assert.ok(result.content[0].text.includes('Writable roots (per directory):\n- ❓ /tmp/root with spaces: proxy writable; Codex turn pending marker test'));
   assert.ok(result.content[0].text.includes("mktemp --tmpdir=\"$root\" \".t3-codex-proxy-check.XXXXXX\""));
   assert.ok(result.content[0].text.includes("'/tmp/root with spaces'"));
+  assert.ok(result.content[0].text.includes('exactly one status symbol at the start'));
+  assert.ok(result.content[0].text.includes('Do not show separate symbols for the two checks'));
+  assert.ok(result.content[0].text.includes('explain in plain text which check failed or is missing'));
+});
+
+test('proxy-check explains a failed proxy-process root with one non-green symbol', () => {
+  const result = proxyCheckResult({
+    ...createPolicy('0.1.3').diagnostics(),
+    writableRoots: {
+      paths: ['/unavailable'], entries: [{ path: '/unavailable', processWritable: false }],
+      configured: 1, processWritable: 0, status: 'unavailable',
+    },
+  });
+  assert.deepEqual(result.structuredContent.writableRoots.entries, [{
+    path: '/unavailable', processWritable: false, status: 'fail', agentCheck: 'required',
+  }]);
+  assert.ok(result.content[0].text.includes('- ❌ /unavailable: proxy process cannot write; Codex turn marker test still required'));
 });
 
 test('new nightlies use open-ended support without an exact-version coverage warning', () => {

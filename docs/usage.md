@@ -114,11 +114,13 @@ diagnostic routing is independent of the three guidance override switches.
 The agent still makes the tool call and writes the final answer; this is not a
 direct chat-command response from the wrapper.
 The result includes a read-only writable-root block with one row per configured
-directory. Each row reports proxy-process access separately from the Codex-turn
-result. The proxy-side status does not prove access from the Codex turn sandbox
-and does not create marker files. When roots are configured, the checklist also
-gives the agent a create/verify/delete marker test to run in the current turn
-and report as PASS, FAIL, or UNKNOWN for each row.
+directory. When roots are configured, the checklist gives the agent a
+create/verify/delete marker test to run in the current turn. Each row has one
+status symbol: `✅` only when both the proxy process and Codex turn pass; `❌`
+when either check fails; or `❓` when the turn check is unavailable. The text
+after the symbol names the failed or missing check. The proxy-side status alone
+does not prove access from the Codex turn sandbox and does not create marker
+files.
 It handles that tool locally, using an upstream `tools/list` request with the
 caller's route, authentication, and session to verify access. Authentication
 failures pass through. Other tool calls and their results remain opaque.
