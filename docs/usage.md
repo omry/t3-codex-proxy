@@ -29,10 +29,47 @@ the request host and origin, serves no external assets, and closes after a
 successful save or timeout. Configuration writes are atomic and use restrictive
 permissions. The normal app-server process never exposes this page.
 
-For T3, set the provider's Binary path to the result of
-`command -v t3-codex-proxy`, then fully restart T3's shared app-server.
-Changes to overrides and writable roots reload for later turns; changes to
-`realCodex` require another T3 restart.
+## Configure T3
+
+1. In T3 Code, open **Settings → Providers → Codex**.
+2. Select the provider that uses your Codex CLI.
+3. Set its **Binary path** to the absolute path printed by
+   `command -v t3-codex-proxy`.
+4. Fully quit and reopen T3 Code so its shared app-server starts through the
+   wrapper.
+5. Resume an existing conversation or open a new one with that provider and
+   send `proxy-check`.
+
+Existing conversations use the wrapper when resumed after the restart. A new
+conversation is not required. Changes to overrides and writable roots reload
+for later turns; changes to `realCodex` require another T3 restart.
+
+## Configuration file
+
+The setup page edits a file with this shape:
+
+```json
+{
+  "realCodex": "/absolute/path/to/codex",
+  "additionalWritableRoots": [],
+  "overrides": {
+    "reviewWorkflow": true,
+    "prWaiting": true,
+    "browserRouting": true
+  }
+}
+```
+
+`realCodex` is the original Codex executable, not the proxy binary. The page
+detects a Codex executable from `PATH` as its initial value. Run
+`t3-codex-proxy configure` again to edit the file. It is stored at
+`$XDG_CONFIG_HOME/t3-codex-proxy/config.json`, or
+`~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset.
+`T3_CODEX_PROXY_CONFIG` can select another absolute path.
+
+The three override switches are independent. `proxy-check` reports six
+compatibility checks: four use `reviewWorkflow`, one uses `prWaiting`, and one
+uses `browserRouting`.
 
 ## Versions
 

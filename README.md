@@ -39,12 +39,50 @@ backend when T3 uses WSL):
 
 ```sh
 npm install --global t3-codex-proxy
+```
+
+## Configure the proxy
+
+Run the one-shot setup page:
+
+```sh
 t3-codex-proxy configure
 ```
 
 The explicit `configure` command prints a short-lived, token-protected
 loopback URL. Open it locally, save the Codex executable path and any optional
-settings, then close the page. It does not run during normal T3 startup.
+settings, then close the page. The executable path must point to the original
+Codex binary, not `t3-codex-proxy`. Run `configure` again whenever you want to
+edit these settings.
+
+The page writes a config with this shape:
+
+```json
+{
+  "realCodex": "/absolute/path/to/codex",
+  "additionalWritableRoots": [],
+  "overrides": {
+    "reviewWorkflow": true,
+    "prWaiting": true,
+    "browserRouting": true
+  }
+}
+```
+
+`additionalWritableRoots` is a list of absolute directories to add to
+workspace-write turns. The three overrides are independent and default to
+`true`; set one to `false` to leave that category of T3 guidance unchanged.
+The diagnostic reports six checks because `reviewWorkflow` controls four of
+them; `prWaiting` and `browserRouting` control one each.
+Valid changes to roots and overrides apply to later turns while the proxy is
+running. Changing `realCodex` requires restarting T3.
+
+The file is stored at
+`$XDG_CONFIG_HOME/t3-codex-proxy/config.json`, or
+`~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset. Set
+`T3_CODEX_PROXY_CONFIG` to use another absolute path.
+
+## Configure T3
 
 In T3 Code, open **Settings → Providers → Codex**, select the provider that
 uses the Codex CLI, and set **Binary path** to:
@@ -53,8 +91,9 @@ uses the Codex CLI, and set **Binary path** to:
 command -v t3-codex-proxy
 ```
 
-Fully quit and reopen T3 Code so its shared app-server starts through the
-wrapper. Existing conversations use the wrapper when resumed.
+Then fully quit and reopen T3 Code. This restarts its shared app-server with
+the wrapper. Existing conversations use the wrapper when resumed; a new
+conversation is not required.
 
 ## Check the installation
 
@@ -68,17 +107,6 @@ The diagnostic checks the T3 connection, compatibility guidance, MCP
 connectivity, and every configured writable directory. A directory is green
 only when both the proxy process and the Codex turn can create and delete a
 marker file.
-
-## Configuration
-
-The setup page writes
-`$XDG_CONFIG_HOME/t3-codex-proxy/config.json`, or
-`~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset.
-Set `T3_CODEX_PROXY_CONFIG` to use another absolute path. The configuration
-contains the absolute `realCodex` path, optional `additionalWritableRoots`,
-and independent `overrides` for review workflow, PR waiting, and browser
-routing. Changes to overrides and writable roots reload for later turns;
-changing `realCodex` requires a T3 restart.
 
 See [usage and compatibility details](docs/usage.md) and
 [verification notes](docs/verification.md).
