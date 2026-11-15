@@ -54,7 +54,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(check.id, 2);
     assert.equal(data.t3Version, '0.1.3');
     assert.equal(data.compatibility, 'tested');
-    assert.deepEqual(data.writableRoots, { configured: 0, processWritable: 0, status: 'not_configured' });
+    assert.deepEqual(data.writableRoots, { paths: [], configured: 0, processWritable: 0, status: 'not_configured', agentCheck: 'not_applicable' });
     assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting });
     assert.equal(data.upstreamMcp, 'tools/list succeeded');
     assert.equal(data.observations.reviewWorkflow.rewrites > 0, reviewWorkflow);
@@ -78,6 +78,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes(`PR-wait override: ${prWaiting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`Browser-routing override: ${browserRouting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes('Writable-root status: 0 configured; 0 writable by the proxy process (not_configured).'));
+    assert.ok(text.includes('Sandbox write check: not applicable; no writable roots are configured.'));
     assert.ok(text.includes('Start with "✅ Proxy check passed."'));
     assert.ok(text.includes('"❌ Proxy check found a problem."'));
     assert.ok(text.includes('"❓ Proxy check incomplete."'));
@@ -122,6 +123,17 @@ test('delegate status responses preserve timeout, cancellation and next fields v
   const response = await (await request('POST', { jsonrpc: '2.0', id: 20, method: 'tools/call',
     params: { name: 'task_status', arguments: { taskId: 'same-task' } } })).json();
   assert.deepEqual(response.result, result);
+});
+
+test('proxy-check supplies an agent-side writable-root test when roots are configured', () => {
+  const result = proxyCheckResult({
+    ...createPolicy('0.1.3').diagnostics(),
+    writableRoots: { paths: ['/tmp/root with spaces'], configured: 1, processWritable: 1, status: 'ready' },
+  });
+  assert.equal(result.structuredContent.writableRoots.agentCheck, 'required');
+  assert.ok(result.content[0].text.includes('Sandbox write check: pending agent verification for 1 configured root(s).'));
+  assert.ok(result.content[0].text.includes("mktemp --tmpdir=\"$root\" \".t3-codex-proxy-check.XXXXXX\""));
+  assert.ok(result.content[0].text.includes("'/tmp/root with spaces'"));
 });
 
 test('new nightlies use open-ended support without an exact-version coverage warning', () => {

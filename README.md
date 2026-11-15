@@ -64,7 +64,9 @@ the wrapper does not generate an assistant reply directly.
 
 The agent reports six compatibility checks from the three configured overrides.
 The diagnostic also reports how many configured writable roots the proxy process
-can access. This is a local process check and does not prove Codex turn-sandbox access.
+can access, then asks the agent to run a create/delete marker test in the Codex
+turn for an end-to-end sandbox result. The proxy-side status alone does not
+prove Codex turn-sandbox access.
 Version compatibility and the T3 connection remain separate installation facts.
 
 ![Actual proxy-check output in T3 showing all six compatibility checks passing](docs/images/proxy-check.png)

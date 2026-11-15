@@ -49,9 +49,10 @@ test('writable-root inspection reports proxy-process access without writing mark
   const dir = await mkdtemp(path.join(tmpdir(), 't3-proxy-writable-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   assert.deepEqual(inspectWritableRoots([dir, path.join(dir, 'missing')]), {
+    paths: [dir, path.join(dir, 'missing')],
     configured: 2, processWritable: 1, status: 'partial',
   });
-  assert.deepEqual(inspectWritableRoots([]), { configured: 0, processWritable: 0, status: 'not_configured' });
+  assert.deepEqual(inspectWritableRoots([]), { paths: [], configured: 0, processWritable: 0, status: 'not_configured' });
 });
 
 test('invalid additional writable roots are rejected', async t => {

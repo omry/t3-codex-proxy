@@ -28,7 +28,7 @@ export function inspectWritableRoots(roots = []) {
   }).length;
   const status = configured.length === 0 ? 'not_configured'
     : processWritable === configured.length ? 'ready' : processWritable === 0 ? 'unavailable' : 'partial';
-  return { configured: configured.length, processWritable, status };
+  return { paths: [...configured], configured: configured.length, processWritable, status };
 }
 
 export async function loadConfig({ configFile = new URL('../config.local.json', import.meta.url), env = process.env } = {}) {
