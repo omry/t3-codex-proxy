@@ -54,6 +54,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(check.id, 2);
     assert.equal(data.t3Version, '0.1.3');
     assert.equal(data.compatibility, 'tested');
+    assert.deepEqual(data.writableRoots, { configured: 0, processWritable: 0, status: 'not_configured' });
     assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting });
     assert.equal(data.upstreamMcp, 'tools/list succeeded');
     assert.equal(data.observations.reviewWorkflow.rewrites > 0, reviewWorkflow);
@@ -76,6 +77,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`PR-wait override: ${prWaiting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`Browser-routing override: ${browserRouting ? 'enabled' : 'disabled'}`));
+    assert.ok(text.includes('Writable-root status: 0 configured; 0 writable by the proxy process (not_configured).'));
     assert.ok(text.includes('Start with "✅ Proxy check passed."'));
     assert.ok(text.includes('"❌ Proxy check found a problem."'));
     assert.ok(text.includes('"❓ Proxy check incomplete."'));

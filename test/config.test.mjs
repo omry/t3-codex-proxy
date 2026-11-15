@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_ADDITIONAL_WRITABLE_ROOTS, DEFAULT_OVERRIDES, loadConfig, watchConfig } from '../src/config.mjs';
+import { DEFAULT_ADDITIONAL_WRITABLE_ROOTS, DEFAULT_OVERRIDES, inspectWritableRoots, loadConfig, watchConfig } from '../src/config.mjs';
 
 async function configFile(t, config) {
   const dir = await mkdtemp(path.join(tmpdir(), 't3-proxy-config-'));
@@ -43,6 +43,15 @@ test('additional writable roots are configured generically, normalized and dedup
     T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS: '["/var/lib/one", "/var/lib/one"]',
   } });
   assert.deepEqual(env.additionalWritableRoots, ['/var/lib/one']);
+});
+
+test('writable-root inspection reports proxy-process access without writing markers', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 't3-proxy-writable-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  assert.deepEqual(inspectWritableRoots([dir, path.join(dir, 'missing')]), {
+    configured: 2, processWritable: 1, status: 'partial',
+  });
+  assert.deepEqual(inspectWritableRoots([]), { configured: 0, processWritable: 0, status: 'not_configured' });
 });
 
 test('invalid additional writable roots are rejected', async t => {

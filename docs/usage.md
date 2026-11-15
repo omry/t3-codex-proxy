@@ -113,6 +113,10 @@ the command and requests with attachments do not trigger this hint. This local
 diagnostic routing is independent of the three guidance override switches.
 The agent still makes the tool call and writes the final answer; this is not a
 direct chat-command response from the wrapper.
+The result includes a read-only writable-root status for the proxy process:
+configured root count, process-accessible root count, and a not-configured,
+ready, partial, or unavailable status. This check does not prove access from
+the Codex turn sandbox and does not create marker files.
 It handles that tool locally, using an upstream `tools/list` request with the
 caller's route, authentication, and session to verify access. Authentication
 failures pass through. Other tool calls and their results remain opaque.

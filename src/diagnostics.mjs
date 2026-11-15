@@ -8,6 +8,7 @@ export const PROXY_CHECK_TOOL = {
 };
 
 export function proxyCheckResult(diagnostics) {
+  const writableRoots = diagnostics.writableRoots ?? { configured: 0, processWritable: 0, status: 'not_configured' };
   const expected = {
     reviewWorkflow: diagnostics.overrides.reviewWorkflow
       ? 'Your workflow controls fresh-review context and reviewer continuity.'
@@ -29,7 +30,7 @@ export function proxyCheckResult(diagnostics) {
       : 'The proxy preserves T3 delegate-wait and task_status guidance unchanged. Verify passthrough; disabled does not imply bounded workflow-wait support.',
   };
   const compatibility = diagnostics.fixSet ? (diagnostics.tested ? 'tested' : 'assumed') : 'unsupported';
-  const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded', expected };
+  const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded', writableRoots, expected };
   const facts = [
     'Proxy check: local facts',
     `T3 version: ${diagnostics.t3Version ?? 'unknown'}`,
@@ -42,6 +43,7 @@ export function proxyCheckResult(diagnostics) {
     `PR-wait override: ${diagnostics.overrides.prWaiting ? 'enabled' : 'disabled'}. ${expected.prWaiting}`,
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
     'T3 tool discovery: connected. The upstream tools/list request succeeded.',
+    `Writable-root status: ${writableRoots.configured} configured; ${writableRoots.processWritable} writable by the proxy process (${writableRoots.status}). This does not prove access from the Codex turn sandbox.`,
     'Raw rewrite counts and exact-version test coverage are available in structuredContent for debugging. Counts cover the whole wrapper process, possibly other threads. Unmatched text is not proof of a conflict in this conversation.',
   ].join('\n');
   const instructions = [

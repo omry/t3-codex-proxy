@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { constants as osConstants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { JsonLines } from './framing.mjs';
-import { watchConfig } from './config.mjs';
+import { inspectWritableRoots, watchConfig } from './config.mjs';
 import { createPolicy } from './policy.mjs';
 import { startMcpProxy } from './mcp-proxy.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from './diagnostics.mjs';
@@ -132,7 +132,7 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
   try {
     if (!passThrough && configFile) stopConfigWatch = watchConfig(configFile, { onChange: applyConfig, report });
     if (!passThrough) proxy = await startMcpProxy({ report,
-      diagnostics: () => currentPolicy().diagnostics(),
+      diagnostics: () => ({ ...currentPolicy().diagnostics(), writableRoots: inspectWritableRoots(liveAdditionalWritableRoots) }),
       rewriteToolsList: message => currentPolicy().rewriteToolsList(message) });
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     await assertNotRecursive(realCodex);
