@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runWrapper } from '../src/wrapper.mjs';
 import { loadConfig } from '../src/config.mjs';
+const configFile = new URL('../config.local.json', import.meta.url);
 
 // Diagnostic messages contain fixed event names only. Never log protocol data,
 // URLs, prompts, configuration, upstream errors, or authentication headers.
@@ -12,8 +13,8 @@ function report(code) {
 }
 
 try {
-  const config = await loadConfig();
-  process.exitCode = await runWrapper({ ...config, args: process.argv.slice(2), report });
+  const config = await loadConfig({ configFile });
+  process.exitCode = await runWrapper({ ...config, configFile, args: process.argv.slice(2), report });
 } catch {
   // Do not interpolate an exception: spawn and HTTP errors can contain secrets.
   report('startup_or_protocol_failed');

@@ -33,6 +33,33 @@ test('exact diagnostic requests gain tool-discovery context without changing use
   }
 });
 
+test('configured writable roots merge only into workspace-write turn policies', () => {
+  const message = { method: 'turn/start', params: {
+    sandboxPolicy: {
+      type: 'workspaceWrite', writableRoots: ['/existing', '/duplicate', '/duplicate'],
+      networkAccess: true, excludeSlashTmp: false, excludeTmpdirEnvVar: true,
+    },
+  } };
+  rewriteClientMessage(message, undefined, undefined, undefined, ['/configured', '/existing', '/configured']);
+  assert.deepEqual(message.params.sandboxPolicy, {
+    type: 'workspaceWrite', writableRoots: ['/existing', '/duplicate', '/configured'],
+    networkAccess: true, excludeSlashTmp: false, excludeTmpdirEnvVar: true,
+  });
+
+  for (const sandboxPolicy of [
+    { type: 'readOnly', writableRoots: ['/existing'] },
+    { type: 'dangerFullAccess', writableRoots: ['/existing'] },
+  ]) {
+    const unchanged = { method: 'turn/start', params: { sandboxPolicy } };
+    const before = structuredClone(unchanged);
+    rewriteClientMessage(unchanged, undefined, undefined, undefined, ['/configured']);
+    assert.deepEqual(unchanged, before);
+  }
+  const resumed = { method: 'turn/start', params: { conversationId: 'resume-1', sandboxPolicy: { type: 'workspaceWrite' } } };
+  rewriteClientMessage(resumed, undefined, undefined, undefined, ['/configured']);
+  assert.deepEqual(resumed.params.sandboxPolicy.writableRoots, ['/configured']);
+});
+
 test('diagnostic routing leaves discussion, attachments, non-T3 contexts and reinjection unchanged', () => {
   const base = { method: 'turn/start', params: {
     input: [{ type: 'text', text: 'proxy-check' }],
@@ -177,6 +204,26 @@ test('public binary loads independent overrides from its local config', { timeou
     assert.equal(replies.find(x => x.id === 2).result.received.params.items[0].content[1].text,
       `<t3_code_tools>${context.t3_code_tools.value}</t3_code_tools>`);
   }
+});
+
+test('public binary applies configured writable roots to workspace-write turns', { timeout: 10000 }, async t => {
+  const peer = await launchIsolatedPublic(t, fake, ['app-server'], {
+    realCodex: fake, additionalWritableRoots: ['/configured/root', '/configured/root'],
+  });
+  peer.child.stdin.end([
+    { id: 0, method: 'initialize', params: { clientInfo: { name: 'T3 Code', version: fixture.sourceVersion.slice(1) } } },
+    { id: 1, method: 'turn/start', params: { sandboxPolicy: {
+      type: 'workspaceWrite', writableRoots: ['/existing/root', '/existing/root'], networkAccess: true,
+      excludeSlashTmp: false, excludeTmpdirEnvVar: true,
+    } } },
+  ].map(message => JSON.stringify(message)).join('\n') + '\n');
+  const result = await peer.exit;
+  assert.equal(result.code, 0);
+  const turn = result.stdout.trim().split('\n').map(JSON.parse).find(message => message.id === 1).result.received;
+  assert.deepEqual(turn.params.sandboxPolicy, {
+    type: 'workspaceWrite', writableRoots: ['/existing/root', '/configured/root'], networkAccess: true,
+    excludeSlashTmp: false, excludeTmpdirEnvVar: true,
+  });
 });
 
 test('wrapper-owned MCP proxy is used by child and closes with child', { timeout: 10000 }, async t => {

@@ -91,9 +91,18 @@ leaves that behavior's developer text and tool descriptions unchanged. Unknown n
 and non-boolean values are rejected. Legacy unrelated top-level properties
 remain ignored. The executable environment override does not override these flags.
 
-Configuration is loaded once per wrapper process. Restart T3's shared app-server
-after edits. Neither disabling a fix nor restarting erases older instructions
-already retained in conversation history.
+The proxy watches its configuration while the app-server runs. Valid changes to
+overrides and writable roots apply to subsequent turns. A malformed edit keeps
+the last valid configuration. Changes to `realCodex` require a T3 restart
+because the Codex child is already running. Neither disabling a fix nor
+restarting erases older instructions already retained in conversation history.
+
+The optional top-level `additionalWritableRoots` array configures extra
+absolute paths for `workspaceWrite` turn policies. Existing writable roots,
+network settings, and other sandbox fields remain intact; read-only and
+full-access policies are unchanged. Duplicate paths are removed. The
+`T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS` environment variable can override
+the configured array with a JSON array. Invalid values are rejected at startup.
 
 The proxy adds a read-only `proxy-check` tool on the final MCP discovery page.
 For a `turn/start` request whose only input is the exact text `proxy-check` or

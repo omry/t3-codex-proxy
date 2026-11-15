@@ -4,11 +4,28 @@ import { pipeline } from 'node:stream/promises';
 import { constants as osConstants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { JsonLines } from './framing.mjs';
+import { watchConfig } from './config.mjs';
 import { createPolicy } from './policy.mjs';
 import { startMcpProxy } from './mcp-proxy.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from './diagnostics.mjs';
 
 const WRAPPER_PATH = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
+
+function rewriteSandboxPolicy(message, additionalWritableRoots = []) {
+  if (message?.method !== 'turn/start') return message;
+  const sandboxPolicy = message.params?.sandboxPolicy;
+  if (!sandboxPolicy || typeof sandboxPolicy !== 'object' || Array.isArray(sandboxPolicy) ||
+      sandboxPolicy.type !== 'workspaceWrite') return message;
+  const existingRoots = sandboxPolicy.writableRoots;
+  if (existingRoots !== undefined && (!Array.isArray(existingRoots) ||
+      existingRoots.some(root => typeof root !== 'string'))) return message;
+  const configuredRoots = Array.isArray(additionalWritableRoots)
+    ? additionalWritableRoots.filter(root => typeof root === 'string' && root)
+    : [];
+  if (existingRoots === undefined && configuredRoots.length === 0) return message;
+  sandboxPolicy.writableRoots = [...new Set([...(existingRoots ?? []), ...configuredRoots])];
+  return message;
+}
 
 async function assertNotRecursive(realCodex) {
   try {
@@ -18,8 +35,9 @@ async function assertNotRecursive(realCodex) {
   }
 }
 
-export function rewriteClientMessage(message, proxy, report, policy) {
+export function rewriteClientMessage(message, proxy, report, policy, additionalWritableRoots) {
   policy?.rewriteDeveloperContext(message);
+  rewriteSandboxPolicy(message, additionalWritableRoots);
   const params = message?.params;
   const input = params?.input;
   if (message?.method === 'turn/start' && Array.isArray(input) && input.length === 1 &&
@@ -40,7 +58,7 @@ export function rewriteClientMessage(message, proxy, report, policy) {
 }
 
 export async function runWrapper({ realCodex, args, input = process.stdin, output = process.stdout,
-  stderr = process.stderr, report = () => {}, overrides }) {
+  stderr = process.stderr, report = () => {}, overrides, additionalWritableRoots, configFile }) {
   const appServer = args[0] === 'app-server';
   const subcommands = ['generate-ts', 'generate-json-schema', 'help', 'daemon', 'proxy'];
   const passThrough = !appServer || args.some(x => subcommands.includes(x) || ['--help', '-h', '--print-startup-config'].includes(x));
@@ -60,15 +78,26 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
   let killTimer;
   let signalled;
   let policy;
+  let liveOverrides = overrides;
+  let liveAdditionalWritableRoots = additionalWritableRoots;
+  let clientVersion;
+  let stopConfigWatch;
   let initialized = false;
-  const currentPolicy = () => policy ??= createPolicy(undefined, report, overrides);
+  const applyConfig = config => {
+    const overridesChanged = JSON.stringify(config.overrides) !== JSON.stringify(liveOverrides);
+    liveOverrides = config.overrides;
+    liveAdditionalWritableRoots = config.additionalWritableRoots;
+    if (overridesChanged && initialized) policy = createPolicy(clientVersion, report, liveOverrides);
+  };
+  const currentPolicy = () => policy ??= createPolicy(clientVersion, report, liveOverrides);
   const rewrite = message => {
     if (message?.method === 'initialize' && !initialized) {
       initialized = true;
       const client = message.params?.clientInfo;
-      policy = createPolicy(client?.name === 'T3 Code' ? client.version : undefined, report, overrides);
+      clientVersion = client?.name === 'T3 Code' ? client.version : undefined;
+      policy = createPolicy(clientVersion, report, liveOverrides);
     }
-    return rewriteClientMessage(message, proxy, report, currentPolicy());
+    return rewriteClientMessage(message, proxy, report, currentPolicy(), liveAdditionalWritableRoots);
   };
   const ownGroup = !passThrough && process.platform !== 'win32';
   const sendSignal = signal => {
@@ -101,6 +130,7 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     stop('SIGTERM');
   }));
   try {
+    if (!passThrough && configFile) stopConfigWatch = watchConfig(configFile, { onChange: applyConfig, report });
     if (!passThrough) proxy = await startMcpProxy({ report,
       diagnostics: () => currentPolicy().diagnostics(),
       rewriteToolsList: message => currentPolicy().rewriteToolsList(message) });
@@ -141,5 +171,6 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     process.off('SIGINT', onInt);
     if (ownGroup || (child?.exitCode === null && child?.signalCode === null)) sendSignal('SIGKILL');
     await proxy?.close();
+    stopConfigWatch?.();
   }
 }

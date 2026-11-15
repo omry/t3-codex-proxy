@@ -80,6 +80,7 @@ In `config.local.json`:
 ```json
 {
   "realCodex": "/absolute/path/to/real/codex",
+  "additionalWritableRoots": [],
   "overrides": {
     "reviewWorkflow": true,
     "prWaiting": true,
@@ -91,6 +92,13 @@ In `config.local.json`:
 `realCodex` must be the absolute path to the original Codex executable, not
 the wrapper. The `T3_CODEX_PROXY_REAL_CODEX` environment variable takes priority
 over this value when set.
+
+`additionalWritableRoots` is an optional array of absolute paths. The proxy
+adds these paths to `workspaceWrite` turn policies and leaves other sandbox
+policies unchanged. Existing roots and policy fields are preserved, and
+duplicates are removed. The `T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS`
+environment variable can override this array with a JSON array of absolute
+paths.
 
 - `reviewWorkflow`: let the user's workflow choose review tools, context,
   reviewer continuity, fixer assignment, and bounded delegate waits and recovery.
@@ -113,8 +121,11 @@ The six checks map to these three flags:
 
 All three default to `true`, including in existing configs without `overrides`.
 Set any one to `false` to preserve T3's original guidance for that behavior.
-Unknown override names and non-boolean values are rejected. Restart T3's shared
-app-server after changing config; existing conversation history is not scrubbed.
+Unknown override names and non-boolean values are rejected. The running proxy
+reloads valid override and writable-root changes for subsequent turns; malformed
+edits keep the last valid configuration. Changes to `realCodex` require a T3
+restart because the Codex child is already running. Existing conversation
+history is not scrubbed.
 
 ## Codex updates
 

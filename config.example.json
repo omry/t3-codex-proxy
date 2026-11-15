@@ -1,5 +1,6 @@
 {
   "realCodex": "/absolute/path/to/real/codex",
+  "additionalWritableRoots": [],
   "overrides": {
     "reviewWorkflow": true,
     "prWaiting": true,
