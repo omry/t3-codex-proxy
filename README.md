@@ -8,6 +8,30 @@ modified.
 The package requires Node.js 24 or newer and an existing Codex CLI
 installation. It has no runtime dependencies.
 
+## Why it exists
+
+T3 adds orchestration guidance and tool descriptions to the Codex app-server.
+Some releases have made that guidance too prescriptive for workflows that need
+to keep their own review context, fixer assignment, wait deadlines, retry and
+recovery rules, or tool choices. Browser instructions have also treated a URL
+or page name as a reason to use browser automation even when an authenticated
+API, CLI, or connector is the better interface. Workspace-write turns may
+also need access to directories outside the normal project root.
+
+## What it changes
+
+- Rewrites only known, version-specific T3 guidance and tool descriptions so
+  the user's workflow controls review routing, continuity, fixer assignment,
+  delegate waits, PR waits, and browser versus API/CLI/connector selection.
+- Preserves user input, tool results, schemas, unrelated guidance, and unknown
+  wording. Unknown wording is reported instead of being broadly removed.
+- Routes T3's local MCP connection through a loopback proxy and adds the
+  read-only `proxy-check` diagnostic.
+- Adds configured writable roots to `workspaceWrite` turns and reports each
+  directory's proxy-process and Codex-turn write status.
+- Reloads valid override and writable-root edits for later turns. It does not
+  add a scheduler or timeout engine, and it does not modify T3 itself.
+
 ## Install
 
 Install it in the environment that runs T3's Codex backend (inside the WSL
