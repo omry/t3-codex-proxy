@@ -120,7 +120,7 @@ status symbol: `✅` only when both the proxy process and Codex turn pass; `❌`
 when either check fails; or `❓` when the turn check is unavailable. The text
 after the symbol names the failed or missing check. The proxy-side status alone
 does not prove access from the Codex turn sandbox and does not create marker
-files.
+files. Each row renders the full absolute directory path as a Markdown link.
 It handles that tool locally, using an upstream `tools/list` request with the
 caller's route, authentication, and session to verify access. Authentication
 failures pass through. Other tool calls and their results remain opaque.

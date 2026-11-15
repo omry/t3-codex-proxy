@@ -67,6 +67,7 @@ The diagnostic reports one row for every configured writable root and asks the
 agent to run a create/delete marker test in the current turn. Each row has one
 status symbol: `✅` means both the proxy process and Codex turn can write;
 `❌` or `❓` is followed by plain text naming the failed or missing check.
+Each row links the full absolute directory path.
 The proxy-side status alone does not prove Codex turn-sandbox access.
 Version compatibility and the T3 connection remain separate installation facts.
 
