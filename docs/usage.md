@@ -6,6 +6,34 @@ Detailed reference for [T3 Codex Proxy](../README.md).
 
 Requires Node.js 24+ and an existing Codex CLI provider. For the Windows desktop app with a WSL backend, use paths and Node.js from inside that backend.
 
+## Published installation
+
+Install the package globally in the backend environment:
+
+```sh
+npm install --global t3-codex-proxy
+t3-codex-proxy configure
+```
+
+`configure` is an explicit one-shot setup command. It prints a short-lived,
+token-protected loopback URL, does not open a browser, and
+does not run during normal T3 startup. The page writes the user configuration
+to `$XDG_CONFIG_HOME/t3-codex-proxy/config.json`, or
+`~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset.
+`T3_CODEX_PROXY_CONFIG` can select another absolute file. If setup has not
+been completed, the wrapper exits with a message telling the user to run
+`t3-codex-proxy configure`.
+
+The setup server binds to loopback, uses a one-time random URL token, checks
+the request host and origin, serves no external assets, and closes after a
+successful save or timeout. Configuration writes are atomic and use restrictive
+permissions. The normal app-server process never exposes this page.
+
+For T3, set the provider's Binary path to the result of
+`command -v t3-codex-proxy`, then fully restart T3's shared app-server.
+Changes to overrides and writable roots reload for later turns; changes to
+`realCodex` require another T3 restart.
+
 ## Versions
 
 The wrapper reads `initialize.params.clientInfo.version` from T3 Code and
@@ -85,7 +113,8 @@ switch applies to PR waits and does not control delegate waits.
 
 ## Overrides and diagnostics
 
-`config.local.json` has an optional `overrides` object. `reviewWorkflow`,
+The user config has an optional `overrides` object. In an unpacked checkout,
+`config.local.json` remains a development fallback. `reviewWorkflow`,
 `prWaiting`, and `browserRouting` each default to `true`; explicit `false`
 leaves that behavior's developer text and tool descriptions unchanged. Unknown names, null, arrays,
 and non-boolean values are rejected. Legacy unrelated top-level properties
@@ -192,9 +221,9 @@ wrapper binary path is configured.
    configuration must supply its original MCP endpoint again.
 
 The wrapper's HTTP listener ends with the wrapper process. There is no daemon,
-service, container, or global Codex configuration to uninstall. Keep this
-directory if you want to retain the prototype, or remove it after stopping the
-wrapper. No files in T3's installation or shared workflow files are changed.
+service, container, or global Codex configuration to uninstall. Remove the
+package after stopping the wrapper if you no longer need it. No files in T3's
+installation or shared workflow files are changed.
 
 Rollback restores normal instruction delivery for new turns and sessions. It
 does not erase rewritten instructions already stored in conversation history.
@@ -216,7 +245,7 @@ Likewise, installation does not erase original instructions in an old history.
   An explicitly supplied old proxy URL is rejected.
 - T3 supplies the runtime endpoint in the inspected release. Custom launch-arg
   overrides for `mcp_servers.t3-code` are rejected; move those out before using
-  this prototype. Global custom MCP configuration is not migrated by the wrapper.
+  this package. Global custom MCP configuration is not migrated by the wrapper.
 - Upstream endpoints must use HTTP(S) on `127.0.0.1`, `localhost`, or `::1`.
   The local listener binds to `127.0.0.1` with a random route per upstream.
   Authentication and MCP session headers pass through; the proxy does not

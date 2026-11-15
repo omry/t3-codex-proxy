@@ -1,7 +1,8 @@
 {
   "name": "t3-codex-proxy",
   "version": "0.1.0",
-  "private": true,
+  "description": "A local compatibility wrapper for the T3 Codex app-server",
+  "keywords": ["t3", "codex", "app-server", "proxy"],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -10,9 +11,21 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "bin": { "t3-codex-proxy": "bin/t3-codex-proxy.mjs" },
+  "files": [
+    "bin/",
+    "src/",
+    "config.example.json",
+    "README.md",
+    "docs/usage.md",
+    "docs/verification.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "publishConfig": { "access": "public" },
   "scripts": {
     "test": "node --test --test-isolation=none test/*.test.mjs",
     "smoke:codex": "node scripts/smoke-codex.mjs",
-    "check": "node --check bin/t3-codex-proxy.mjs && node --check src/config.mjs && node --check src/compatibility.mjs && node --check src/policy.mjs && node --check src/diagnostics.mjs && node --check src/framing.mjs && node --check src/mcp-proxy.mjs && node --check src/wrapper.mjs"
+    "check": "node --check bin/t3-codex-proxy.mjs && node --check src/config.mjs && node --check src/configure.mjs && node --check src/compatibility.mjs && node --check src/policy.mjs && node --check src/diagnostics.mjs && node --check src/framing.mjs && node --check src/mcp-proxy.mjs && node --check src/wrapper.mjs",
+    "pack:check": "npm pack --dry-run"
   }
 }

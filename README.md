@@ -1,158 +1,74 @@
 # T3 Codex Proxy
 
-A local workaround for an issue created by T3 Code's orchestration guidance:
-its injected developer instructions and MCP tool descriptions can override
-the user's workflow. This has forced fresh delegates for re-checks, required
-prior findings in independent reviews, and replaced bounded PR polling with
-T3 watches that do not preserve the workflow's timeout recovery.
-An observed browser-selection failure also sent an agent to a login page when an authenticated
-API, CLI, or connector can already complete the task.
+T3 Codex Proxy is a local wrapper for the Codex app-server. It applies the
+configured compatibility fixes, adds the `proxy-check` diagnostic, and can
+grant configured directories to workspace-write turns. T3 itself is not
+modified.
 
-The proxy rewrites those rules so your workflow controls reviews, delegate
-waits, PR waits, and tool selection. Three configuration flags enable these
-overrides by default and let you disable each group independently. T3 itself
-stays unmodified.
-
-Background: [original continuity issue #19821](https://github.com/pingdotgg/t3code/issues/19821),
-[regression report #24877](https://github.com/pingdotgg/t3code/issues/24877),
-[workflow-control discussion #25010](https://github.com/pingdotgg/t3code/discussions/25010#discussioncomment-19201466), and
-[unnecessary browser login #26300](https://github.com/pingdotgg/t3code/issues/26300).
-
-Requires Node.js 24+ and an existing Codex CLI installation. Tested with a WSL
-backend. No npm dependencies to install.
+The package requires Node.js 24 or newer and an existing Codex CLI
+installation. It has no runtime dependencies.
 
 ## Install
 
-Run these commands in the same environment as T3's backend (inside WSL if you
-use T3's WSL backend):
+Install it in the environment that runs T3's Codex backend (inside the WSL
+backend when T3 uses WSL):
 
 ```sh
-git clone https://github.com/omry/t3-codex-proxy.git
-cd t3-codex-proxy
-cp config.example.json config.local.json
-command -v codex
+npm install --global t3-codex-proxy
+t3-codex-proxy configure
 ```
 
-1. Edit `config.local.json`. Set `realCodex` to the absolute path printed by
-   `command -v codex`.
-2. Print the wrapper's absolute path:
+The explicit `configure` command prints a short-lived, token-protected
+loopback URL. Open it locally, save the Codex executable path and any optional
+settings, then close the page. It does not run during normal T3 startup.
 
-   ```sh
-   realpath bin/t3-codex-proxy.mjs
-   ```
+In T3 Code, open **Settings → Providers → Codex**, select the provider that
+uses the Codex CLI, and set **Binary path** to:
 
-3. Open T3 Code → **Settings → Providers → Codex**. Select the provider that
-   uses your existing Codex CLI installation.
-4. Record its original **Binary path**, then replace it with the wrapper path
-   from step 2. Keep `realCodex` in the config pointing to the original Codex.
-5. **Fully quit and reopen T3 Code** to restart its shared app-server.
+```sh
+command -v t3-codex-proxy
+```
 
-Existing threads then use the wrapper when resumed. Their old history remains.
-To undo the setup, restore the original Binary path and restart T3.
+Fully quit and reopen T3 Code so its shared app-server starts through the
+wrapper. Existing conversations use the wrapper when resumed.
 
 ## Check the installation
 
-After restarting T3, open a new conversation using that Codex provider and paste:
+Open a conversation with that provider and send:
 
 ```text
 proxy-check
 ```
 
-`proxy_check` is also accepted. For an exact diagnostic request, the wrapper
-adds a turn-specific tool-discovery hint. The agent must still invoke the tool;
-the wrapper does not generate an assistant reply directly.
+The diagnostic checks the T3 connection, compatibility guidance, MCP
+connectivity, and every configured writable directory. A directory is green
+only when both the proxy process and the Codex turn can create and delete a
+marker file.
 
-The agent reports six compatibility checks from the three configured overrides.
-The diagnostic reports one row for every configured writable root and asks the
-agent to run a create/delete marker test in the current turn. Each row has one
-status symbol: `✅` means both the proxy process and Codex turn can write;
-`❌` or `❓` is followed by plain text naming the failed or missing check.
-Each row links the full absolute directory path.
-The proxy-side status alone does not prove Codex turn-sandbox access.
-Version compatibility and the T3 connection remain separate installation facts.
+## Configuration
 
-![Actual proxy-check output in T3 showing all six compatibility checks passing](docs/images/proxy-check.png)
+The setup page writes
+`$XDG_CONFIG_HOME/t3-codex-proxy/config.json`, or
+`~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset.
+Set `T3_CODEX_PROXY_CONFIG` to use another absolute path. The configuration
+contains the absolute `realCodex` path, optional `additionalWritableRoots`,
+and independent `overrides` for review workflow, PR waiting, and browser
+routing. Changes to overrides and writable roots reload for later turns;
+changing `realCodex` requires a T3 restart.
 
-Captured from T3 on 2026-11-12 with all overrides enabled. PASS confirms the
-guidance the agent received. It does not prove that a live delegate recovers
-from a timeout; that behavior was not exercised. A failed check or missing
-evidence prevents an overall green result. A disabled override can pass when
-the agent confirms that T3's original guidance is preserved.
+See [usage and compatibility details](docs/usage.md) and
+[verification notes](docs/verification.md).
 
-## Override configuration
-
-In `config.local.json`:
-
-```json
-{
-  "realCodex": "/absolute/path/to/real/codex",
-  "additionalWritableRoots": [],
-  "overrides": {
-    "reviewWorkflow": true,
-    "prWaiting": true,
-    "browserRouting": true
-  }
-}
-```
-
-`realCodex` must be the absolute path to the original Codex executable, not
-the wrapper. The `T3_CODEX_PROXY_REAL_CODEX` environment variable takes priority
-over this value when set.
-
-`additionalWritableRoots` is an optional array of absolute paths. The proxy
-adds these paths to `workspaceWrite` turn policies and leaves other sandbox
-policies unchanged. Existing roots and policy fields are preserved, and
-duplicates are removed. The `T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS`
-environment variable can override this array with a JSON array of absolute
-paths.
-
-- `reviewWorkflow`: let the user's workflow choose review tools, context,
-  reviewer continuity, fixer assignment, and bounded delegate waits and recovery.
-- `prWaiting`: preserve workflow-owned PR polling, deadlines, retry limits,
-  recovery, and evidence. Retain PR linking; use T3 watching when the workflow
-  selects it or specifies no waiting mechanism.
-- `browserRouting`: follow the user's selected tools and workflow; otherwise
-  prefer a suitable authenticated API, CLI, or connector. A URL alone does not
-  request browser automation. Check existing authenticated tools before asking
-  for browser login. Retain T3's shared-browser controls when browser automation
-  is requested or needed.
-
-The six checks map to these three flags:
-
-| Flag | Compatibility checks |
-| --- | --- |
-| `reviewWorkflow` | Review context and continuity; review-tool routing; fixer assignment; delegate waiting and recovery |
-| `prWaiting` | PR waiting |
-| `browserRouting` | Browser routing |
-
-All three default to `true`, including in existing configs without `overrides`.
-Set any one to `false` to preserve T3's original guidance for that behavior.
-Unknown override names and non-boolean values are rejected. The running proxy
-reloads valid override and writable-root changes for subsequent turns; malformed
-edits keep the last valid configuration. Changes to `realCodex` require a T3
-restart because the Codex child is already running. Existing conversation
-history is not scrubbed.
-
-## Codex updates
-
-T3's built-in Codex update action is unavailable with a custom wrapper path.
-Stop T3 Code, update Codex with the package manager used by its installation,
-then reopen T3 Code. `--version`, help, and tooling commands pass through to
-the configured Codex executable.
-
-## Checks
+## Development
 
 ```sh
 npm run check
 npm test
+npm run pack:check
 ```
 
-Fixes are selected automatically from T3's initialization version. Newer
-nightlies and stable releases use the latest open-ended range and are assumed
-compatible. [Exact-version test coverage](docs/usage.md#versions) is recorded
-separately; missing coverage does not prevent applying the matching fixes.
-Changes to T3 may require proxy updates; repeat the installation check after upgrading.
-See [usage and limitations](docs/usage.md),
-[verification](docs/verification.md), and the [rewrite policy](src/policy.mjs).
+For a release, publish a tagged npm version from this repository. Use Sapling
+for repository history and commits.
 
-Independent project. [MIT](LICENSE); [third-party notices](THIRD_PARTY_NOTICES.md).
+MIT licensed. See [LICENSE](LICENSE) and
+[third-party notices](THIRD_PARTY_NOTICES.md).

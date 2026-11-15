@@ -62,7 +62,7 @@ Verified on 2026-11-12 with Node.js 24.14.0 and Codex CLI 0.166.0:
 After reloading the shared app-server, live `proxy_check` passed on 4580.
 The latest received developer context lets the workflow choose native or T3
 review tools and assign the fixer for small findings. The earlier tool-routing
-conflict no longer blocks AWD's native review path.
+conflict no longer blocks the native review path.
 
 Delegate waiting remains unresolved. The proxy continues to preserve tool-call
 results and does not implement delegate deadlines or timeout recovery.

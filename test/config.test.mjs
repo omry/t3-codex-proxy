@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_ADDITIONAL_WRITABLE_ROOTS, DEFAULT_OVERRIDES, inspectWritableRoots, loadConfig, watchConfig } from '../src/config.mjs';
+import { DEFAULT_ADDITIONAL_WRITABLE_ROOTS, DEFAULT_OVERRIDES, findCodexExecutable, inspectWritableRoots, loadConfig, resolveConfigFile, watchConfig, writeConfig } from '../src/config.mjs';
 
 async function configFile(t, config) {
   const dir = await mkdtemp(path.join(tmpdir(), 't3-proxy-config-'));
@@ -103,4 +103,31 @@ test('config watcher reloads valid edits and keeps the last valid config after i
   assert.deepEqual(changes.at(-1).additionalWritableRoots, ['/updated']);
   assert.ok(events.includes('config_reloaded'));
   assert.ok(events.includes('config_reload_failed'));
+});
+
+test('published config discovery prefers an explicit path, then XDG config, with a local development fallback', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-discovery-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const packageConfig = path.join(root, 'config.local.json'); await writeFile(packageConfig, '{}');
+  assert.equal(resolveConfigFile({ env: { T3_CODEX_PROXY_CONFIG: '/explicit/config.json' }, packageConfigFile: packageConfig }), '/explicit/config.json');
+  assert.equal(resolveConfigFile({ env: { XDG_CONFIG_HOME: '/xdg' }, packageConfigFile: path.join(root, 'missing.json') }), '/xdg/t3-codex-proxy/config.json');
+  assert.equal(resolveConfigFile({ env: {}, packageConfigFile: packageConfig }), packageConfig);
+});
+
+test('config writes are validated, private and atomic', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-write-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'nested', 'config.json');
+  await writeConfig(file, { realCodex: '/usr/bin/codex', additionalWritableRoots: ['/tmp/one/../one'] });
+  assert.deepEqual(JSON.parse(await readFile(file)), {
+    realCodex: '/usr/bin/codex', additionalWritableRoots: ['/tmp/one'], overrides: DEFAULT_OVERRIDES,
+  });
+  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  await assert.rejects(writeConfig(file, { realCodex: 'codex' }), /^Error: absolute_real_codex_required$/);
+});
+
+test('codex discovery uses executable PATH entries without invoking a shell', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 't3-proxy-path-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const codex = path.join(root, 'codex'); await writeFile(codex, '#!/bin/sh\n'); await chmod(codex, 0o755);
+  assert.equal(findCodexExecutable({ PATH: root }), codex);
+  assert.equal(findCodexExecutable({ PATH: path.join(root, 'missing') }), '');
+  await access(codex);
 });

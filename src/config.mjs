@@ -1,10 +1,41 @@
-import { readFile } from 'node:fs/promises';
-import { accessSync, constants as fsConstants, watch } from 'node:fs';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { accessSync, constants as fsConstants, existsSync, watch } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 
 export const DEFAULT_OVERRIDES = Object.freeze({ reviewWorkflow: true, prWaiting: true, browserRouting: true });
 export const DEFAULT_ADDITIONAL_WRITABLE_ROOTS = Object.freeze([]);
+
+function defaultConfigDirectory(env = process.env) {
+  return env.XDG_CONFIG_HOME || path.join(env.HOME || os.homedir(), '.config');
+}
+
+export function resolveConfigFile({ env = process.env, packageConfigFile } = {}) {
+  const configured = env.T3_CODEX_PROXY_CONFIG;
+  if (configured !== undefined) {
+    if (typeof configured !== 'string' || !configured || !path.isAbsolute(configured)) {
+      throw new Error('absolute_proxy_config_required');
+    }
+    return configured;
+  }
+  if (packageConfigFile) {
+    const local = packageConfigFile instanceof URL ? fileURLToPath(packageConfigFile) : packageConfigFile;
+    if (existsSync(local)) return local;
+  }
+  return path.join(defaultConfigDirectory(env), 't3-codex-proxy', 'config.json');
+}
+
+export function findCodexExecutable(env = process.env) {
+  for (const directory of String(env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const name of process.platform === 'win32' ? ['codex.exe', 'codex'] : ['codex']) {
+      const candidate = path.join(directory, name);
+      try { accessSync(candidate, fsConstants.X_OK); return candidate; } catch { /* Try the next PATH entry. */ }
+    }
+  }
+  return '';
+}
 
 export function resolveOverrides(overrides = {}) {
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides) ||
@@ -34,23 +65,48 @@ export function inspectWritableRoots(roots = []) {
   return { paths: [...configured], entries, configured: configured.length, processWritable, status };
 }
 
-export async function loadConfig({ configFile = new URL('../config.local.json', import.meta.url), env = process.env } = {}) {
+export function normalizeConfig(config = {}) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('invalid_proxy_config');
+  const realCodex = config.realCodex;
+  if (typeof realCodex !== 'string' || !path.isAbsolute(realCodex)) throw new Error('absolute_real_codex_required');
+  const additionalWritableRoots = Object.hasOwn(config, 'additionalWritableRoots')
+    ? config.additionalWritableRoots : DEFAULT_ADDITIONAL_WRITABLE_ROOTS;
+  return { realCodex, overrides: resolveOverrides(config.overrides),
+    additionalWritableRoots: resolveAdditionalWritableRoots(additionalWritableRoots) };
+}
+
+export async function loadConfig({ configFile, env = process.env } = {}) {
+  configFile ??= resolveConfigFile({ env, packageConfigFile: new URL('../config.local.json', import.meta.url) });
   let config = {};
   try {
     config = JSON.parse(await readFile(configFile, 'utf8'));
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('invalid_proxy_config');
   }
-  if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('invalid_proxy_config');
-  const realCodex = env.T3_CODEX_PROXY_REAL_CODEX || config.realCodex;
-  if (typeof realCodex !== 'string' || !path.isAbsolute(realCodex)) throw new Error('absolute_real_codex_required');
-  let additionalWritableRoots = Object.hasOwn(config, 'additionalWritableRoots')
-    ? config.additionalWritableRoots : DEFAULT_ADDITIONAL_WRITABLE_ROOTS;
-  if (env.T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS !== undefined) {
-    try { additionalWritableRoots = JSON.parse(env.T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS); } catch { throw new Error('invalid_additional_writable_roots'); }
+  if (env.T3_CODEX_PROXY_REAL_CODEX !== undefined && env.T3_CODEX_PROXY_REAL_CODEX !== '') {
+    config = { ...config, realCodex: env.T3_CODEX_PROXY_REAL_CODEX };
   }
-  return { realCodex, overrides: resolveOverrides(config.overrides),
-    additionalWritableRoots: resolveAdditionalWritableRoots(additionalWritableRoots) };
+  if (env.T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS !== undefined) {
+    try { config = { ...config, additionalWritableRoots: JSON.parse(env.T3_CODEX_PROXY_ADDITIONAL_WRITABLE_ROOTS) }; }
+    catch { throw new Error('invalid_additional_writable_roots'); }
+  }
+  return normalizeConfig(config);
+}
+
+export async function writeConfig(configFile, config) {
+  const normalized = normalizeConfig(config);
+  const directory = path.dirname(configFile instanceof URL ? fileURLToPath(configFile) : configFile);
+  const target = configFile instanceof URL ? fileURLToPath(configFile) : configFile;
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const temporary = path.join(directory, `.config.${process.pid}.${randomBytes(8).toString('hex')}.tmp`);
+  try {
+    await writeFile(temporary, JSON.stringify(normalized, null, 2) + '\n', { mode: 0o600 });
+    await rename(temporary, target);
+  } catch (error) {
+    try { await rm(temporary, { force: true }); } catch { /* Preserve the original error. */ }
+    throw error;
+  }
+  return normalized;
 }
 
 export function watchConfig(configFile, { env = process.env, onChange, report = () => {} } = {}) {
