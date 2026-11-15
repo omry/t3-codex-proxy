@@ -8,16 +8,21 @@ export const PROXY_CHECK_TOOL = {
 };
 
 export function proxyCheckResult(diagnostics) {
-  const writableRoots = diagnostics.writableRoots ?? { paths: [], configured: 0, processWritable: 0, status: 'not_configured' };
+  const writableRoots = diagnostics.writableRoots ?? { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured' };
   const rootPaths = Array.isArray(writableRoots.paths) ? writableRoots.paths : [];
+  const rootEntries = Array.isArray(writableRoots.entries) && writableRoots.entries.length === rootPaths.length
+    ? writableRoots.entries : rootPaths.map(path => ({ path, processWritable: false }));
   const shellQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
   const rootTest = rootPaths.length === 0 ? null : [
-    'set -eu',
+    'set -u',
     `for root in ${rootPaths.map(shellQuote).join(' ')}; do`,
-    '  marker="$(mktemp --tmpdir="$root" ".t3-codex-proxy-check.XXXXXX")"',
-    '  test -f "$marker"',
-    '  rm "$marker"',
-    '  test ! -e "$marker"',
+    '  marker=""',
+    '  if marker="$(mktemp --tmpdir="$root" ".t3-codex-proxy-check.XXXXXX")" && test -f "$marker" && rm "$marker" && test ! -e "$marker"; then',
+    '    printf "PASS %s\\n" "$root"',
+    '  else',
+    '    [ -z "$marker" ] || rm -f "$marker"',
+    '    printf "FAIL %s\\n" "$root"',
+    '  fi',
     'done',
   ].join('\n');
   const expected = {
@@ -41,8 +46,11 @@ export function proxyCheckResult(diagnostics) {
       : 'The proxy preserves T3 delegate-wait and task_status guidance unchanged. Verify passthrough; disabled does not imply bounded workflow-wait support.',
   };
   const compatibility = diagnostics.fixSet ? (diagnostics.tested ? 'tested' : 'assumed') : 'unsupported';
+  const reportEntries = rootEntries.map(entry => ({ ...entry, agentCheck: rootTest ? 'required' : 'not_applicable' }));
   const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded',
-    writableRoots: { ...writableRoots, agentCheck: rootTest ? 'required' : 'not_applicable' }, expected };
+    writableRoots: { ...writableRoots, entries: reportEntries, agentCheck: rootTest ? 'required' : 'not_applicable' }, expected };
+  const rootReport = rootEntries.length === 0 ? '- none configured'
+    : rootEntries.map(entry => `- ${entry.path}: ${entry.processWritable ? '✅ proxy writable' : '❌ proxy unavailable'}; ❓ Codex turn pending marker test`).join('\n');
   const facts = [
     'Proxy check: local facts',
     `T3 version: ${diagnostics.t3Version ?? 'unknown'}`,
@@ -55,7 +63,7 @@ export function proxyCheckResult(diagnostics) {
     `PR-wait override: ${diagnostics.overrides.prWaiting ? 'enabled' : 'disabled'}. ${expected.prWaiting}`,
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
     'T3 tool discovery: connected. The upstream tools/list request succeeded.',
-    `Writable-root status: ${writableRoots.configured} configured; ${writableRoots.processWritable} writable by the proxy process (${writableRoots.status}). This does not prove access from the Codex turn sandbox.`,
+    'Writable roots (per directory):\n' + rootReport,
     rootTest ? `Sandbox write check: pending agent verification for ${rootPaths.length} configured root(s).` : 'Sandbox write check: not applicable; no writable roots are configured.',
     'Raw rewrite counts and exact-version test coverage are available in structuredContent for debugging. Counts cover the whole wrapper process, possibly other threads. Unmatched text is not proof of a conflict in this conversation.',
   ].join('\n');
@@ -65,7 +73,7 @@ export function proxyCheckResult(diagnostics) {
     'Version compatibility comes from the matching range. If a range matches, report "tested" when tested is true and "assumed compatible" otherwise. New releases use the latest open-ended range. Missing exact-version coverage must not cause UNKNOWN, FAIL, or an upgrade warning. If no range matches, report unsupported and treat it as an installation failure.',
     'Call orchestrator_capabilities once to check an actual read-only T3 tool call. Do not delegate, send messages, start watches, or schedule work.',
     rootTest
-      ? `Run this shell check in the current Codex turn to verify create and delete access for every configured root. Report Sandbox write check as PASS only when every command succeeds, FAIL when a command fails, or UNKNOWN when you cannot run it. Do not substitute the proxy-process status.\n\n${rootTest}`
+      ? `Run this shell check in the current Codex turn to verify create and delete access for every configured root. Report Sandbox write check as PASS only when every command succeeds, FAIL when a command fails, or UNKNOWN when you cannot run it. Do not substitute the proxy-process status. Then report one Writable roots row per directory using exactly this format: "- <path>: ✅ proxy writable; ✅ Codex turn writable" (or ❌/❓ for either status).\n\n${rootTest}`
       : 'Sandbox write check is not applicable because no writable roots are configured.',
     'There are exactly six compatibility checks: (1) Review context and continuity, (2) PR waiting, (3) Browser routing, (4) Review-tool routing, (5) Fixer assignment, and (6) Delegate waiting and recovery. Checks 1, 4, 5, and 6 use the reviewWorkflow override; check 2 uses prWaiting; check 3 uses browserRouting. Give each PASS, FAIL, or UNKNOWN based on the developer guidance and tool descriptions actually present in your context. Missing evidence is UNKNOWN. Do not infer received guidance from config or rewrite counts alone. Process-wide unmatched text does not fail this conversation by itself; a visible conflicting instruction does.',
     'For Delegate waiting and recovery when enabled, inspect the actual delegate and task_status guidance: PASS requires explicit workflow control of supported bounded waits, deadlines and recovery, including keeping the same task identity after timeout. Restrictive guidance that requires ending the turn or forbids all task_status checks while a delegate runs is FAIL when it overrides a workflow-owned wait. Missing evidence is UNKNOWN. A next suggestion in an unchanged tool result does not by itself fail the check when received developer guidance explicitly preserves workflow-owned waiting. When disabled, PASS means original T3 guidance is preserved, not that bounded workflow waits are supported. Do not claim that this proxy fixes delegation deadlines or guarantees timers, and preserve all tool-call results unchanged.',

@@ -23,12 +23,15 @@ export function resolveAdditionalWritableRoots(roots = []) {
 
 export function inspectWritableRoots(roots = []) {
   const configured = Array.isArray(roots) ? roots : [];
-  const processWritable = configured.filter(root => {
-    try { accessSync(root, fsConstants.W_OK); return true; } catch { return false; }
-  }).length;
+  const entries = configured.map(path => {
+    let processWritable = false;
+    try { accessSync(path, fsConstants.W_OK); processWritable = true; } catch { /* Report the failed root. */ }
+    return { path, processWritable };
+  });
+  const processWritable = entries.filter(entry => entry.processWritable).length;
   const status = configured.length === 0 ? 'not_configured'
     : processWritable === configured.length ? 'ready' : processWritable === 0 ? 'unavailable' : 'partial';
-  return { paths: [...configured], configured: configured.length, processWritable, status };
+  return { paths: [...configured], entries, configured: configured.length, processWritable, status };
 }
 
 export async function loadConfig({ configFile = new URL('../config.local.json', import.meta.url), env = process.env } = {}) {

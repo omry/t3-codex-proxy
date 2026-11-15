@@ -50,9 +50,10 @@ test('writable-root inspection reports proxy-process access without writing mark
   t.after(() => rm(dir, { recursive: true, force: true }));
   assert.deepEqual(inspectWritableRoots([dir, path.join(dir, 'missing')]), {
     paths: [dir, path.join(dir, 'missing')],
+    entries: [{ path: dir, processWritable: true }, { path: path.join(dir, 'missing'), processWritable: false }],
     configured: 2, processWritable: 1, status: 'partial',
   });
-  assert.deepEqual(inspectWritableRoots([]), { paths: [], configured: 0, processWritable: 0, status: 'not_configured' });
+  assert.deepEqual(inspectWritableRoots([]), { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured' });
 });
 
 test('invalid additional writable roots are rejected', async t => {
