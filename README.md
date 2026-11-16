@@ -64,16 +64,17 @@ The page writes a config with this shape:
   "overrides": {
     "reviewWorkflow": true,
     "prWaiting": true,
-    "browserRouting": true
+    "browserRouting": true,
+    "environmentRouting": true
   }
 }
 ```
 
 `additionalWritableRoots` is a list of absolute directories to add to
-workspace-write turns. The three overrides are independent and default to
+workspace-write turns. The four overrides are independent and default to
 `true`; set one to `false` to leave that category of T3 guidance unchanged.
-The diagnostic reports six checks because `reviewWorkflow` controls four of
-them; `prWaiting` and `browserRouting` control one each.
+The diagnostic reports seven checks because `reviewWorkflow` controls four of
+them; `prWaiting`, `browserRouting`, and `environmentRouting` control one each.
 Valid changes to roots and overrides apply to later turns while the proxy is
 running. Changing `realCodex` requires restarting T3.
 

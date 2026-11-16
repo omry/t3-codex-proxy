@@ -4,6 +4,7 @@
   "overrides": {
     "reviewWorkflow": true,
     "prWaiting": true,
-    "browserRouting": true
+    "browserRouting": true,
+    "environmentRouting": true
   }
 }

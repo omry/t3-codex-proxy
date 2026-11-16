@@ -44,11 +44,12 @@ textarea{min-height:6rem}fieldset{border:0;padding:0;margin:0}button{margin-top:
 <fieldset><legend>Guidance overrides</legend>
 <label><input type="checkbox" id="reviewWorkflow"> Review workflow</label>
 <label><input type="checkbox" id="prWaiting"> PR waiting</label>
-<label><input type="checkbox" id="browserRouting"> Browser routing</label></fieldset>
+<label><input type="checkbox" id="browserRouting"> Browser routing</label>
+<label><input type="checkbox" id="environmentRouting"> Environment routing</label></fieldset>
 <button type="submit">Save configuration</button><p id="status" role="status"></p></form></main>
 <script nonce="${nonce}">const $=id=>document.getElementById(id);const status=$('status');
-async function load(){const r=await fetch(location.pathname+'/config',{cache:'no-store'});if(!r.ok)throw Error('load_failed');const c=await r.json();$('realCodex').value=c.realCodex||'';$('roots').value=(c.additionalWritableRoots||[]).join('\\n');for(const k of ['reviewWorkflow','prWaiting','browserRouting'])$(k).checked=c.overrides?.[k]!==false}
-$('form').addEventListener('submit',async e=>{e.preventDefault();status.textContent='Saving…';const c={realCodex:$('realCodex').value.trim(),additionalWritableRoots:$('roots').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean),overrides:{reviewWorkflow:$('reviewWorkflow').checked,prWaiting:$('prWaiting').checked,browserRouting:$('browserRouting').checked}};const r=await fetch(location.pathname+'/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(c)});const b=await r.json().catch(()=>({}));status.textContent=r.ok?'Saved. You can close this page.':(b.error||'Save failed.')});load().catch(()=>status.textContent='Could not load the current configuration.');</script></body></html>`;
+async function load(){const r=await fetch(location.pathname+'/config',{cache:'no-store'});if(!r.ok)throw Error('load_failed');const c=await r.json();$('realCodex').value=c.realCodex||'';$('roots').value=(c.additionalWritableRoots||[]).join('\\n');for(const k of ['reviewWorkflow','prWaiting','browserRouting','environmentRouting'])$(k).checked=c.overrides?.[k]!==false}
+$('form').addEventListener('submit',async e=>{e.preventDefault();status.textContent='Saving…';const c={realCodex:$('realCodex').value.trim(),additionalWritableRoots:$('roots').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean),overrides:{reviewWorkflow:$('reviewWorkflow').checked,prWaiting:$('prWaiting').checked,browserRouting:$('browserRouting').checked,environmentRouting:$('environmentRouting').checked}};const r=await fetch(location.pathname+'/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(c)});const b=await r.json().catch(()=>({}));status.textContent=r.ok?'Saved. You can close this page.':(b.error||'Save failed.')});load().catch(()=>status.textContent='Could not load the current configuration.');</script></body></html>`;
 }
 
 async function initialConfig(configFile, env) {
@@ -56,7 +57,7 @@ async function initialConfig(configFile, env) {
     const raw = JSON.parse(await readFile(configFile, 'utf8'));
     return normalizeConfig(raw);
   } catch {
-    return { realCodex: findCodexExecutable(env), overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true }, additionalWritableRoots: [] };
+    return { realCodex: findCodexExecutable(env), overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true }, additionalWritableRoots: [] };
   }
 }
 

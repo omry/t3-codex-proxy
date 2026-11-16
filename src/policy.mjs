@@ -46,6 +46,23 @@ export const PR_WAITING_GUIDANCE = "Let the user's workflow choose how PR checks
 
 export const BROWSER_ROUTING_GUIDANCE = "Follow the user's selected workflow and tools. Otherwise, prefer an available authenticated API, CLI, or connector that supports the task. A URL identifies a resource; it does not by itself request browser automation. A missing operation in one interface does not establish that the service lacks API support. Check the relevant available interface before declaring browser access necessary. Use browser automation when the user requests it or when the task requires browser interaction. Before asking the user to sign in, check whether existing authenticated tools can complete the task.";
 
+export const ENVIRONMENT_ROUTING_GUIDANCE = "Use T3 environment tools only when the user explicitly asks you to use a T3-linked environment or delegate work to another machine through T3. A host, VM, load balancer, service endpoint, or repository named as a debugging target does not by itself request environment linking. Otherwise follow the user's selected workflow and available tools.";
+
+const ENVIRONMENT_TARGETING_GUIDANCE = "When T3 environment work is explicitly requested, use `t3_environment_links` for linked environments and pass its `environmentId` to the T3 tool. Those ids are the linked machine's, so pass `threadId` when targeting a thread there.";
+
+const environmentRoutingRule = { context: [[
+  '- Another machine: `t3_environment_links` lists linked ones. Pass its `environmentId` to a T3 tool to act there. Ids are then that machine\'s, so pass `threadId`.',
+  `- ${ENVIRONMENT_ROUTING_GUIDANCE}\n- ${ENVIRONMENT_TARGETING_GUIDANCE}`,
+], [
+  '- A machine the user names that is not linked ("delegate this to my vps"): call `t3_environment_link` with a `hint` from their words. Never ask for a pairing code in chat.',
+  '- When T3 environment work is explicitly requested, use `t3_environment_links` for linked environments and `t3_environment_link` for an unlinked machine with a hint from the user\'s words. Never ask for a pairing code in chat.',
+]] };
+
+const environmentRoutingRules = {
+  legacy: environmentRoutingRule,
+  current: environmentRoutingRule,
+};
+
 const browserRoutingRules = {
   legacy: {
     tools: [[
@@ -129,7 +146,7 @@ function rewriteGuidance(text, scope, rules, report, feature) {
   else if (feature !== 'reviewWorkflow' || /\breview|running delegate/i.test(text) || (scope === 'task_status' && rules[scope])) {
     const replacements = (rules[scope] ?? []).map(([, after]) => after);
     const warning = { reviewWorkflow: 'unrecognized_review_guidance', prWaiting: 'unrecognized_pr_wait_guidance',
-      browserRouting: 'unrecognized_browser_routing_guidance' }[feature];
+      browserRouting: 'unrecognized_browser_routing_guidance', environmentRouting: 'unrecognized_environment_routing_guidance' }[feature];
     if (!replacements.some(after => text.includes(after))) report(warning);
   }
   return result;
@@ -171,11 +188,13 @@ export function createPolicy(version, report = () => {}, overrides) {
   const compatibility = selectCompatibility(version);
   const rules = compatibility.fixSet === 'legacy' ? legacyRules : compatibility.fixSet === 'current' ? currentRules : {};
   const featureRules = { reviewWorkflow: rules, prWaiting: prWaitingRules[compatibility.fixSet] ?? {},
-    browserRouting: browserRoutingRules[compatibility.fixSet] ?? {} };
+    browserRouting: browserRoutingRules[compatibility.fixSet] ?? {},
+    environmentRouting: environmentRoutingRules[compatibility.fixSet] ?? {} };
   const observations = {
     reviewWorkflow: { rewrites: 0, unrecognized: 0 },
     prWaiting: { rewrites: 0, unrecognized: 0 },
     browserRouting: { rewrites: 0, unrecognized: 0 },
+    environmentRouting: { rewrites: 0, unrecognized: 0 },
   };
   const apply = (text, scope, feature) => rewriteGuidance(text, scope,
     featureRules[feature], code => {
@@ -191,6 +210,15 @@ export function createPolicy(version, report = () => {}, overrides) {
     }
     if (settings.browserRouting && key === 't3_code_tools' && typeof value === 'string' && /\bbrowser\b/i.test(value)) {
       value = apply(value, 'tools', 'browserRouting');
+    }
+    if (/^t3_code_orchestration_\d+$/.test(key) && compatibility.fixSet && settings.environmentRouting && typeof value === 'string' &&
+        /t3_environment_links|t3_environment_link|Another machine|machine the user names|environment linking/i.test(value)) {
+      const pairs = featureRules.environmentRouting.context;
+      if (pairs.every(([before]) => value.includes(before))) value = apply(value, 'context', 'environmentRouting');
+      else if (!pairs.every(([, after]) => value.includes(after))) {
+        observations.environmentRouting.unrecognized++;
+        report('unrecognized_environment_routing_guidance');
+      }
     }
     if (settings.prWaiting && key === 't3_code_runtime') return apply(value, 'runtime', 'prWaiting');
     return value;

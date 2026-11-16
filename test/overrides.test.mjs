@@ -1,21 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
+import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE } from '../src/policy.mjs';
 
 const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
 
 for (const fixture of fixtures) {
-  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) {
-    test(`${fixture.sourceVersion}: review=${reviewWorkflow}, PR waiting=${prWaiting}, browser=${browserRouting} stay independent`, () => {
+  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) for (const environmentRouting of [false, true]) {
+    test(`${fixture.sourceVersion}: review=${reviewWorkflow}, PR waiting=${prWaiting}, browser=${browserRouting}, environment=${environmentRouting} stay independent`, () => {
       const events = [];
-      const policy = createPolicy(fixture.sourceVersion.slice(1), event => events.push(event), { reviewWorkflow, prWaiting, browserRouting });
+      const policy = createPolicy(fixture.sourceVersion.slice(1), event => events.push(event), { reviewWorkflow, prWaiting, browserRouting, environmentRouting });
       const runtime = `<runtime_info>private runtime marker</runtime_info>\n\n${fixture.pullRequestInstructions}`;
       const browserContext = fixture.sections?.find(section => section.startsWith('### Visuals and preview'));
+      const environmentContext = fixture.sections?.find(section => section.includes('Another machine: `t3_environment_links`'));
       const browserTools = `${fixture.browserTools}\n\n## T3 Code devices\nprivate device marker`;
       const message = { method: 'turn/start', params: { additionalContext: {
         t3_code_orchestration_01: { kind: 'application', value: fixture.context },
+        ...(environmentContext ? { t3_code_orchestration_02: { kind: 'application', value: environmentContext } } : {}),
         ...(browserContext ? { t3_code_orchestration_03: { kind: 'application', value: browserContext } } : {}),
         t3_code_tools: { kind: 'application', value: browserTools },
         t3_code_runtime: { kind: 'application', value: runtime },
@@ -34,6 +36,15 @@ for (const fixture of fixtures) {
       }
       assert.equal(actual.t3_code_runtime.value !== runtime, prWaiting);
       assert.equal(actual.t3_code_tools.value !== browserTools, browserRouting);
+      if (environmentContext) {
+        const environment = actual.t3_code_orchestration_02.value;
+        assert.equal(environment !== environmentContext, environmentRouting);
+        assert.equal(environment.includes(ENVIRONMENT_ROUTING_GUIDANCE), environmentRouting);
+        assert.ok(environment.includes('environmentId'));
+        assert.ok(environment.includes('threadId'));
+        assert.equal(environment.includes('Another machine: `t3_environment_links`'), !environmentRouting);
+        assert.equal(environment.includes('A machine the user names that is not linked'), !environmentRouting);
+      }
       assert.ok(actual.t3_code_tools.value.endsWith('## T3 Code devices\nprivate device marker'));
       assert.ok(actual.t3_code_tools.value.includes('preview_status'));
       assert.ok(actual.t3_code_tools.value.includes('preview_open'));
@@ -79,6 +90,7 @@ for (const fixture of fixtures) {
       before.params.additionalContext.t3_code_runtime = actual.t3_code_runtime;
       before.params.additionalContext.t3_code_tools = actual.t3_code_tools;
       if (browserContext) before.params.additionalContext.t3_code_orchestration_03 = actual.t3_code_orchestration_03;
+      if (environmentContext) before.params.additionalContext.t3_code_orchestration_02 = actual.t3_code_orchestration_02;
       assert.deepEqual(message, before);
       const once = structuredClone(message);
       policy.rewriteDeveloperContext(message);
@@ -128,6 +140,18 @@ for (const fixture of fixtures) {
       if (browserContext) assert.equal(browserInjection.params.items[3].content[0].text,
         `<t3_code_orchestration_03>${actual.t3_code_orchestration_03.value}</t3_code_orchestration_03>`);
       assert.deepEqual(policy.rewriteDeveloperContext(structuredClone(browserInjection)), browserInjection);
+      if (environmentContext) {
+        const environmentTag = `<t3_code_orchestration_02>${environmentContext}</t3_code_orchestration_02>`;
+        const environmentInjection = { method: 'thread/inject_items', params: { items: [
+          { type: 'message', role: 'developer', content: [{ type: 'input_text', text: environmentTag }] },
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: environmentTag }] },
+        ] } };
+        policy.rewriteDeveloperContext(environmentInjection);
+        const expectedEnvironment = environmentRouting ? actual.t3_code_orchestration_02.value : environmentContext;
+        assert.equal(environmentInjection.params.items[0].content[0].text,
+          `<t3_code_orchestration_02>${expectedEnvironment}</t3_code_orchestration_02>`);
+        assert.equal(environmentInjection.params.items[1].content[0].text, environmentTag);
+      }
     });
   }
 }
@@ -162,6 +186,52 @@ test('all overrides are enabled when configuration omits them', () => {
   assert.ok(message.params.additionalContext.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE));
   assert.notEqual(message.params.additionalContext.t3_code_runtime.value, fixture.pullRequestInstructions);
   assert.ok(message.params.additionalContext.t3_code_orchestration_03.value.includes('authenticated API, CLI, or connector'));
+});
+
+test('environment routing only links machines when T3 environment work is explicitly requested', () => {
+  const fixture = fixtures.find(({ sourceVersion }) => sourceVersion.includes('4580'));
+  const message = { method: 'turn/start', params: { additionalContext: {
+    t3_code_orchestration_02: { kind: 'application', value: fixture.sections[1] },
+  } } };
+  const policy = createPolicy(fixture.sourceVersion.slice(1));
+  policy.rewriteDeveloperContext(message);
+  const output = message.params.additionalContext.t3_code_orchestration_02.value;
+  assert.ok(output.includes(ENVIRONMENT_ROUTING_GUIDANCE));
+  assert.ok(output.includes('A host, VM, load balancer, service endpoint, or repository named as a debugging target'));
+  assert.ok(output.includes('When T3 environment work is explicitly requested'));
+  assert.ok(output.includes('pass its `environmentId` to the T3 tool'));
+  assert.ok(output.includes('pass `threadId` when targeting a thread there'));
+  assert.ok(!output.includes('Another machine: `t3_environment_links`'));
+  assert.ok(!output.includes('A machine the user names that is not linked'));
+
+  const disabled = createPolicy(fixture.sourceVersion.slice(1), () => {}, { environmentRouting: false });
+  const unchanged = { method: 'turn/start', params: { additionalContext: {
+    t3_code_orchestration_02: { kind: 'application', value: fixture.sections[1] },
+  } } };
+  disabled.rewriteDeveloperContext(unchanged);
+  assert.equal(unchanged.params.additionalContext.t3_code_orchestration_02.value, fixture.sections[1]);
+});
+
+test('environment routing follows moved sections and reports changed wording without private text', () => {
+  const fixture = fixtures.at(-1);
+  const environment = fixture.sections[1];
+  const events = [];
+  const policy = createPolicy('8.0.0', code => events.push(code), { reviewWorkflow: false, prWaiting: false, browserRouting: false });
+  const moved = { method: 'turn/start', params: { additionalContext: {
+    t3_code_orchestration_07: { kind: 'application', value: environment },
+  } } };
+  policy.rewriteDeveloperContext(moved);
+  assert.ok(moved.params.additionalContext.t3_code_orchestration_07.value.includes(ENVIRONMENT_ROUTING_GUIDANCE));
+  assert.equal(policy.diagnostics().observations.environmentRouting.rewrites, 1);
+  const changed = { method: 'turn/start', params: { additionalContext: {
+    t3_code_orchestration_07: { kind: 'application', value: 'Another machine: private changed `t3_environment_links` guidance' },
+  } } };
+  const before = structuredClone(changed);
+  policy.rewriteDeveloperContext(changed);
+  assert.deepEqual(changed, before);
+  assert.equal(policy.diagnostics().observations.environmentRouting.unrecognized, 1);
+  assert.ok(events.includes('unrecognized_environment_routing_guidance'));
+  assert.ok(!events.join(' ').includes('private changed'));
 });
 
 test('disabled overrides produce no guidance warnings', () => {

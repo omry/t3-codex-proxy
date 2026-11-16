@@ -25,12 +25,12 @@ test('legacy autoUpdate config is ignored while the executable remains configura
 });
 
 test('override booleans merge with enabled defaults independently', async t => {
-  for (const overrides of [{}, { reviewWorkflow: false }, { prWaiting: false }, { browserRouting: false },
-    { reviewWorkflow: false, prWaiting: false, browserRouting: false },
-    { reviewWorkflow: true, prWaiting: true, browserRouting: true }]) {
+  for (const overrides of [{}, { reviewWorkflow: false }, { prWaiting: false }, { browserRouting: false }, { environmentRouting: false },
+    { reviewWorkflow: false, prWaiting: false, browserRouting: false, environmentRouting: false },
+    { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true }]) {
     const file = await configFile(t, { realCodex: '/fake/codex', overrides });
     assert.deepEqual(await loadConfig({ configFile: file, env: {} }), {
-      realCodex: '/fake/codex', overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true, ...overrides },
+      realCodex: '/fake/codex', overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true, ...overrides },
       additionalWritableRoots: [],
     });
   }
@@ -69,7 +69,7 @@ test('invalid additional writable roots are rejected', async t => {
 
 test('invalid override shapes, misspellings and non-booleans fail explicitly', async t => {
   for (const overrides of [null, true, [], 'all', { reviewWorkflow: 'false' }, { prWaiting: 0 },
-    { prWaiting: null }, { prWaitng: true }, { browserRouting: 'true' }, { browserRounting: true }]) {
+    { prWaiting: null }, { prWaitng: true }, { browserRouting: 'true' }, { browserRounting: true }, { environmentRouting: 'true' }, { environmentRoutng: true }]) {
     const file = await configFile(t, { realCodex: '/fake/codex', overrides });
     await assert.rejects(loadConfig({ configFile: file, env: {} }), /^Error: invalid_proxy_overrides$/);
   }

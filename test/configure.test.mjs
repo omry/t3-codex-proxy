@@ -35,7 +35,9 @@ test('explicit configure page is loopback-bound, origin-checked and writes priva
   assert.equal(page.status, 200);
   assert.equal(page.headers.get('x-frame-options'), 'DENY');
   assert.match(page.headers.get('content-security-policy'), /script-src 'nonce-[0-9a-f]+/);
-  assert.ok((await page.text()).includes('T3 Codex Proxy setup'));
+  const pageText = await page.text();
+  assert.ok(pageText.includes('T3 Codex Proxy setup'));
+  assert.ok(pageText.includes('id="environmentRouting"'));
   const forbidden = await fetch(url + '/config', { method: 'POST', headers: {
     origin: 'http://evil.invalid', 'content-type': 'application/json',
   }, body: JSON.stringify({ realCodex: '/bin/sh' }) });

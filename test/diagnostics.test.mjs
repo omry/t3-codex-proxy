@@ -8,6 +8,7 @@ import { createPolicy } from '../src/policy.mjs';
 import { PROXY_CHECK_TOOL, proxyCheckResult } from '../src/diagnostics.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-0.1.3.json', import.meta.url)));
+const environmentFixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-4580.json', import.meta.url)));
 
 async function setup(t, overrides, handler) {
   const requests = [];
@@ -28,8 +29,10 @@ async function setup(t, overrides, handler) {
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const policy = createPolicy('0.1.3', () => {}, overrides);
+  const environmentContext = environmentFixture.sections.find(section => section.includes('Another machine: `t3_environment_links`'));
   policy.rewriteDeveloperContext({ method: 'turn/start', params: { additionalContext: {
     t3_code_orchestration_01: { kind: 'application', value: fixture.context },
+    ...(environmentContext ? { t3_code_orchestration_02: { kind: 'application', value: environmentContext } } : {}),
     t3_code_runtime: { kind: 'application', value: fixture.pullRequestInstructions },
     t3_code_orchestration_03: { kind: 'application', value: fixture.sections[2] },
     t3_code_tools: { kind: 'application', value: fixture.browserTools },
@@ -43,9 +46,9 @@ async function setup(t, overrides, handler) {
   return { requests, request };
 }
 
-for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) {
-  test(`proxy-check reports actual config and model checklist: review=${reviewWorkflow}, PR=${prWaiting}, browser=${browserRouting}`, async t => {
-    const { requests, request } = await setup(t, { reviewWorkflow, prWaiting, browserRouting });
+for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) for (const environmentRouting of [false, true]) {
+  test(`proxy-check reports actual config and model checklist: review=${reviewWorkflow}, PR=${prWaiting}, browser=${browserRouting}, environment=${environmentRouting}`, async t => {
+    const { requests, request } = await setup(t, { reviewWorkflow, prWaiting, browserRouting, environmentRouting });
     const list = await (await request('POST', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
     assert.deepEqual(list.result.tools.at(-1), PROXY_CHECK_TOOL);
     const check = await (await request('POST', { jsonrpc: '2.0', id: 2, method: 'tools/call',
@@ -55,20 +58,23 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(data.t3Version, '0.1.3');
     assert.equal(data.compatibility, 'tested');
     assert.deepEqual(data.writableRoots, { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured', agentCheck: 'not_applicable' });
-    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting });
+    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting, environmentRouting });
     assert.equal(data.upstreamMcp, 'tools/list succeeded');
     assert.equal(data.observations.reviewWorkflow.rewrites > 0, reviewWorkflow);
     assert.equal(data.observations.prWaiting.rewrites > 0, prWaiting);
     assert.equal(data.observations.prWaiting.unrecognized, 0);
     assert.equal(data.observations.browserRouting.rewrites > 0, browserRouting);
     assert.equal(data.observations.browserRouting.unrecognized, 0);
+    assert.equal(data.observations.environmentRouting.rewrites > 0, environmentRouting);
+    assert.equal(data.observations.environmentRouting.unrecognized, 0);
     assert.deepEqual(Object.keys(data.expected).sort(), [
-      'browserRouting', 'delegateWaitingRecovery', 'fixerAssignment',
+      'browserRouting', 'delegateWaitingRecovery', 'environmentRouting', 'fixerAssignment',
       'prWaiting', 'reviewToolRouting', 'reviewWorkflow',
     ]);
     assert.ok(data.expected.reviewWorkflow.includes(reviewWorkflow ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.prWaiting.includes(prWaiting ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.browserRouting.includes(browserRouting ? 'authenticated API, CLI, or connector' : 'preserves T3'));
+    assert.ok(data.expected.environmentRouting.includes(environmentRouting ? 'T3 environment tools' : 'preserves T3'));
     assert.ok(data.expected.reviewToolRouting.includes(reviewWorkflow ? 'available review tools' : 'preserves T3'));
     assert.ok(data.expected.fixerAssignment.includes(reviewWorkflow ? 'assigns who fixes' : 'preserves T3'));
     assert.ok(data.expected.delegateWaitingRecovery.includes(reviewWorkflow ? 'bounded delegate waits' : 'preserves T3'));
@@ -77,6 +83,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes(`Review workflow override: ${reviewWorkflow ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`PR-wait override: ${prWaiting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes(`Browser-routing override: ${browserRouting ? 'enabled' : 'disabled'}`));
+    assert.ok(text.includes(`Environment-routing override: ${environmentRouting ? 'enabled' : 'disabled'}`));
     assert.ok(text.includes('Writable roots (per directory):\n- none configured'));
     assert.ok(text.includes('Sandbox write check: not applicable; no writable roots are configured.'));
     assert.ok(text.includes('Start with "✅ Proxy check passed."'));
@@ -84,23 +91,25 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes('"❓ Proxy check incomplete."'));
     assert.ok(text.includes('✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN'));
     assert.ok(text.includes('Keep the text labels alongside the icons; a disabled override does not mean FAIL'));
-    assert.ok(text.includes('There are exactly six compatibility checks'));
-    assert.ok(text.includes('"Compatibility checks (6):" and exactly six bullets'));
+    assert.ok(text.includes('There are exactly seven compatibility checks'));
+    assert.ok(text.includes('"Compatibility checks (7):" and exactly seven bullets'));
     for (const label of [
       'Review context and continuity', 'PR waiting', 'Browser routing',
-      'Review-tool routing', 'Fixer assignment', 'Delegate waiting and recovery',
+      'Review-tool routing', 'Fixer assignment', 'Delegate waiting and recovery', 'Environment routing',
     ]) assert.ok(text.includes(`"${label}"`), label);
     assert.ok(!text.includes('"not overridden"'));
     assert.ok(text.includes('Checks 1, 4, 5, and 6 use the reviewWorkflow override'));
     assert.ok(text.includes('Restrictive guidance that requires ending the turn'));
     assert.ok(text.includes('Do not claim that this proxy fixes delegation deadlines or guarantees timers'));
-    assert.ok(text.includes('only when the installation works and all six compatibility checks pass'));
+    assert.ok(text.includes('only when the installation works and all seven compatibility checks pass'));
     assert.ok(!text.includes('"Override checks (3):"'));
     assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the compatibility list'));
     assert.ok(text.includes('Do not show raw counters'));
     assert.ok(!text.includes('"rewrites":') && !text.includes('"tested":'));
     assert.ok(text.includes('Call orchestrator_capabilities once'));
-    assert.ok(text.includes('Do not infer received guidance from config or rewrite counts alone'));
+    assert.ok(text.includes('Do not infer received guidance from config, expected text, or rewrite counts alone'));
+    assert.ok(text.includes('PASS requires the received machine-routing context to contain the replacement guidance and omit both original unconditional-linking bullets'));
+    assert.ok(text.includes('UNKNOWN means no machine-routing context is visible'));
     assert.ok(!text.includes('test-secret') && !text.includes('/mcp'));
     assert.equal(requests.length, 2);
     assert.ok(requests.every(x => x.message.method === 'tools/list'));

@@ -7,11 +7,11 @@ known `task_status` restriction under the existing `reviewWorkflow` switch.
 It preserves cancellation, schemas and tool results. The workflow retains
 control of supported bounded waits and timeout recovery; a timeout keeps the
 same child identity and does not imply cancellation or completion. The sixth
-diagnostic check now reports this switch's enabled/disabled state and checks
+diagnostic check reports this switch's enabled/disabled state and checks
 actual received guidance, rather than reporting an independent unimplemented
 override. It still requires evidence before PASS.
 
-All 130 tests and syntax checks pass. Enabled and all-disabled isolated
+All 200 tests and syntax checks pass. Enabled and all-disabled isolated
 real-Codex smoke checks verify context, reinjection and `task_status`
 descriptions at inference. The fixture matrix covers the earlier no-poll
 wording; a separate fixture records the live 4580 wording and status-tool text.
@@ -19,11 +19,28 @@ Regression checks retain cancellation rules, output schemas, task identity,
 timeout fields and the original `next` value. Smoke responses use a fake model;
 no live delegated task or timeout-recovery behavior was exercised.
 
-The subsequent live `proxy-check` received the replacement in both developer
-instructions and the `task_status` description and reported all six checks
-PASS. This verifies active guidance, not actual delegate timeout recovery.
-The shared proxy was not restarted for this change. Earlier live checks below
-used the preceding source and still found the delegate-wait conflict.
+The local full suite and isolated smoke checks verify the replacement in both
+developer instructions and the `task_status` description. The diagnostic now
+specifies seven checks. A live shared-proxy check has not been run for this
+change, and the shared proxy was not restarted. Earlier live checks below used
+the preceding source and still found the delegate-wait conflict.
+
+## Environment routing
+
+The proxy now treats machine routing as a separate compatibility surface. Its
+default `environmentRouting` rewrite preserves the `environmentId` and
+`threadId` targeting details for explicit T3 environment or cross-machine
+delegation requests, while guiding the model away from environment linking when
+host, VM, load-balancer, service-endpoint, or repository names appear during
+ordinary debugging. This changes developer guidance; it cannot enforce model
+behavior or guarantee tool availability. The setup page and configuration file
+expose the switch, and `proxy-check` reports it as the seventh check.
+
+The rewrite is guarded by machine-routing markers and applies to both initial
+developer context and tagged compaction reinjection. Setting
+`environmentRouting` to `false` preserves the original T3 wording. No live
+environment tool call is made or used as proof of model compliance by these
+checks.
 
 ## Diagnostic request discovery
 

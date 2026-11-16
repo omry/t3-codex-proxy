@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FIX_SETS, TESTED_VERSIONS, matchesVersion, selectCompatibility } from '../src/compatibility.mjs';
-import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
+import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE } from '../src/policy.mjs';
 
 const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
   .map(name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url))));
@@ -70,6 +70,13 @@ for (const fixture of fixtures) {
       const expected = structuredClone(context);
       expected.t3_code_orchestration_01.value = message.params.additionalContext.t3_code_orchestration_01.value;
       for (const [key, entry] of Object.entries(context)) {
+        if (entry.value.includes('Another machine: `t3_environment_links`')) {
+          expected[key].value = message.params.additionalContext[key].value;
+          assert.ok(message.params.additionalContext[key].value.includes(ENVIRONMENT_ROUTING_GUIDANCE));
+          assert.ok(message.params.additionalContext[key].value.includes('environmentId'));
+          assert.ok(message.params.additionalContext[key].value.includes('threadId'));
+          assert.ok(!message.params.additionalContext[key].value.includes('Another machine: `t3_environment_links`'));
+        }
         if (!entry.value.includes('names a page or tab')) continue;
         const rewritten = message.params.additionalContext[key].value;
         assert.ok(rewritten.includes('authenticated API, CLI, or connector'));
@@ -88,6 +95,12 @@ for (const fixture of fixtures) {
       policy.rewriteDeveloperContext(reinject);
       assert.ok(reinject.params.items[0].content[0].text.includes(REVIEW_GUIDANCE));
       assert.ok(!reinject.params.items[0].content[0].text.includes(original));
+      const environmentIndex = sections.findIndex(value => value.includes('Another machine: `t3_environment_links`'));
+      if (environmentIndex >= 0) {
+        const environmentTag = `<t3_code_orchestration_${String(environmentIndex + 1).padStart(2, '0')}>`;
+        assert.ok(reinject.params.items[environmentIndex].content[0].text.includes(ENVIRONMENT_ROUTING_GUIDANCE));
+        assert.ok(reinject.params.items[environmentIndex].content[0].text.startsWith(environmentTag));
+      }
       const tools = { result: { tools: ['delegate_task', 't3_thread_send'].map(name => ({
         name, description: fixture[name], inputSchema: { type: 'object', properties: { keep: { type: 'string' } } },
       })) } };

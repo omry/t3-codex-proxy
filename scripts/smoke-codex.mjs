@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { BROWSER_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
 
@@ -185,6 +185,7 @@ requires_openai_auth = false
   }
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[0]).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && sections.some(section => section.includes('Another machine: `t3_environment_links`')));
   assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   await call('thread/inject_items', { threadId: thread.thread.id, items: Object.entries(context).map(([tag, entry], i) => {
     return { type: 'message', role: 'developer', content: [{ type: 'input_text',
@@ -202,6 +203,7 @@ requires_openai_auth = false
   }
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
+  assert.equal(developerText(modelRequests[1]).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && sections.some(section => section.includes('Another machine: `t3_environment_links`')));
   assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   requestDiagnostic = true;
   await runTurn(context);
@@ -217,8 +219,9 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
     diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
   assert.ok(diagnosticText.includes('Proxy check passed.'));
-  assert.ok(diagnosticText.includes('Compatibility checks (6):'));
+  assert.ok(diagnosticText.includes('Compatibility checks (7):'));
   assert.ok(diagnosticText.includes('Delegate waiting and recovery'));
+  assert.ok(diagnosticText.includes('Environment routing'));
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
