@@ -78,19 +78,25 @@ The wrapper reads `initialize.params.clientInfo.version` from T3 Code and
 selects one fix set for that process. It forwards initialization unchanged.
 Concurrent T3 instances can select different fixes independently.
 
-Matching ranges use optional inclusive `min` and `max` bounds:
+Prerelease and nightly matching ranges use optional inclusive `min` and `max` bounds:
 
 - `{ "min": "X" }`: X and newer.
 - `{ "max": "Y" }`: Y and older.
 - Both bounds: the inclusive interval. Equal bounds: one exact version.
 
-Versions use semantic ordering, including nightly numeric components. The
+Prerelease versions use semantic ordering, including nightly numeric components. The
 current rules select the older fix through `0.1.3-nightly.20261025.3655`, and
 the newer fix from `0.1.3-nightly.20261025.3669` onward. No fix is assigned to
 the gap between those bounds. See [the registry](../src/compatibility.mjs).
 
-Matching ranges define version support, including newer nightlies and stable
-releases in the latest open-ended range. Exact-version test coverage is
+Stable releases require an explicit version-to-fix-set entry in `STABLE_FIX_SETS`.
+Each supported stable release must have a captured guidance fixture and regression
+coverage. A stable release never inherits support from a range, even when its
+version falls inside one. Stable `0.1.3` currently selects `current`. Build metadata
+does not change version selection: `0.1.3+build.7` selects the `0.1.3` entry.
+
+Matching ranges define support for prerelease and nightly versions, including
+newer nightlies in the latest open-ended range. Exact-version test coverage is
 separate. Automated fixture and isolated real-Codex checks cover these exact releases:
 
 - `0.1.3-nightly.20261025.3655`
@@ -104,14 +110,15 @@ separate. Automated fixture and isolated real-Codex checks cover these exact rel
 - `0.1.10-nightly.20261112.4580` (live PR-linking wording; other inputs retained
   from the 4119 fixture)
 
-New versions within a matching range receive that fix without an untested-version
+New prerelease versions within a matching range receive that fix without an untested-version
 warning. The diagnostic describes them as assumed compatible. Exact-version
 test coverage is recorded separately in its raw data.
 Every rewrite checks its expected input; changed review wording is preserved
 with `unrecognized_review_guidance`; changed PR-wait
 wording is preserved with `unrecognized_pr_wait_guidance`; changed browser
 wording is preserved with `unrecognized_browser_routing_guidance`. Missing,
-invalid, or unmatched versions produce `unsupported_t3_version` and pass the
+invalid, or unmatched versions, and stable releases without an explicit entry,
+produce `unsupported_t3_version` and pass the
 guidance through unchanged. These warnings do not stop Codex startup. No
 version or private input is interpolated into the diagnostics.
 
@@ -222,8 +229,9 @@ override is enabled or disabled. The overall result is green only when all seven
 checks pass. The overall result and each bullet use ✅ for pass, ❌ for failure,
 and ❓ for missing evidence. A disabled override can still pass. Installation
 facts have no PASS labels. It omits raw counters and internal identifiers unless
-requested. New releases in a matching version range are assumed compatible
-without an exact-version coverage warning. Missing evidence about received
+requested. New prerelease versions in a matching range are assumed compatible
+without an exact-version coverage warning. Unlisted stable releases are unsupported.
+Missing evidence about received
 guidance or connectivity is UNKNOWN.
 
 The delegate-waiting check inspects actual T3 instructions and tool guidance.

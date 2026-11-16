@@ -1,5 +1,21 @@
 # Verification
 
+## Explicit stable-version support
+
+Stable T3 releases require an explicit version-to-fix-set entry. Stable `0.1.3`
+selects `current`; unlisted stable releases receive no compatibility rewrites,
+emit `unsupported_t3_version`, and report unsupported in `proxy-check`.
+Prerelease and nightly versions retain range selection. Build metadata does not
+change the stable version selected. Regression checks require each supported
+stable entry to reference an existing fix set, tested version, and guidance
+fixture. Separate checks verify that unlisted stable versions preserve developer
+guidance and tool descriptions and produce an unsupported diagnostic.
+
+Validation: syntax checks and 120 focused policy tests pass. The full suite
+passed 200 of 201 tests; the remaining test hit a `/tmp` quota error while
+copying a fixture. It passed when rerun with a temporary directory in the
+workspace. The running shared proxy has not loaded this change.
+
 ## Workflow-owned delegate waits
 
 The source now replaces the two observed delegate no-poll sentences and the

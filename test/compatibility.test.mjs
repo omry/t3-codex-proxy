@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FIX_SETS, TESTED_VERSIONS, matchesVersion, selectCompatibility } from '../src/compatibility.mjs';
+import { FIX_SETS, STABLE_FIX_SETS, TESTED_VERSIONS, matchesVersion, selectCompatibility } from '../src/compatibility.mjs';
 import { createPolicy, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE } from '../src/policy.mjs';
 
 const fixtures = ['t3-guidance.json', 't3-guidance-3669.json', 't3-guidance-0.1.3.json', 't3-guidance-3991.json', 't3-guidance-4119.json', 't3-guidance-4580.json']
@@ -32,17 +32,25 @@ test('inclusive open, bounded and exact ranges use semantic version precedence',
   assert.throws(() => matchesVersion('1.2.3', { min: '2.0.0', max: '1.0.0' }), /invalid_version_range/);
 });
 
-test('supported ranges include newer releases regardless of exact-version test coverage', () => {
+test('stable releases require explicit support while nightlies use ranges', () => {
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3655'), { fixSet: 'legacy', tested: true });
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3669'), { fixSet: 'current', tested: true });
   assert.deepEqual(selectCompatibility('0.1.3'), { fixSet: 'current', tested: true });
-  assert.deepEqual(selectCompatibility('0.0.1'), { fixSet: 'legacy', tested: false });
   assert.deepEqual(selectCompatibility('0.1.4-nightly.20261027.3783'), { fixSet: 'current', tested: false });
-  assert.deepEqual(selectCompatibility('8.0.0'), { fixSet: 'current', tested: false });
+  assert.deepEqual(selectCompatibility('0.0.1'), { fixSet: null, tested: false });
+  assert.deepEqual(selectCompatibility('8.0.0'), { fixSet: null, tested: false });
+  assert.deepEqual(selectCompatibility('0.1.3+build.7'), { fixSet: 'current', tested: true });
+  assert.deepEqual(selectCompatibility('0.1.4'), { fixSet: null, tested: false });
+  assert.deepEqual(selectCompatibility('0.1.4+build.7'), { fixSet: null, tested: false });
   assert.deepEqual(selectCompatibility('0.1.3-nightly.20261025.3660'), { fixSet: null, tested: false });
+  for (const [version, fixSet] of Object.entries(STABLE_FIX_SETS)) {
+    assert.ok(FIX_SETS.some(fix => fix.id === fixSet));
+    assert.ok(TESTED_VERSIONS.includes(version));
+    assert.ok(fixtures.some(fixture => fixture.sourceVersion === `v${version}`));
+  }
   for (const version of TESTED_VERSIONS) assert.equal(FIX_SETS.filter(fix => matchesVersion(version, fix.range)).length, 1);
   const events = [];
-  const policy = createPolicy('8.0.0', event => events.push(event));
+  const policy = createPolicy('8.0.0-nightly.1', event => events.push(event));
   const latest = fixtures.at(-1);
   const message = { method: 'turn/start', params: { additionalContext: {
     t3_code_orchestration_01: { kind: 'application', value: latest.context },
@@ -50,6 +58,30 @@ test('supported ranges include newer releases regardless of exact-version test c
   policy.rewriteDeveloperContext(message);
   assert.ok(message.params.additionalContext.t3_code_orchestration_01.value.includes(REVIEW_GUIDANCE));
   assert.deepEqual(events, ['t3_fixset_current', 'guidance_rewritten']);
+});
+
+test('unlisted stable releases preserve developer guidance and tool descriptions', () => {
+  for (const version of ['0.0.1', '0.1.4', '8.0.0', '0.1.4+build.7']) {
+    const events = [];
+    const policy = createPolicy(version, event => events.push(event));
+    const source = fixtures.at(-1);
+    const message = { method: 'turn/start', params: { additionalContext: {
+      ...Object.fromEntries(source.sections.map((value, i) =>
+        [`t3_code_orchestration_${i + 1}`, { kind: 'application', value }])),
+      t3_code_runtime: { kind: 'application', value: source.pullRequestInstructions },
+      t3_code_tools: { kind: 'application', value: source.browserTools },
+    } } };
+    const tools = { result: { tools: ['delegate_task', 't3_thread_send', 'watch_pull_request'].map(name =>
+      ({ name, description: source[name] })) } };
+    const beforeMessage = structuredClone(message);
+    const beforeTools = structuredClone(tools);
+    policy.rewriteDeveloperContext(message);
+    policy.rewriteToolsList(tools);
+    assert.deepEqual(message, beforeMessage);
+    assert.deepEqual(tools, beforeTools);
+    assert.equal(policy.diagnostics().fixSet, null);
+    assert.ok(events.includes('unsupported_t3_version'));
+  }
 });
 
 for (const fixture of fixtures) {

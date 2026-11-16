@@ -187,16 +187,16 @@ test('new nightlies use open-ended support without an exact-version coverage war
   const text = result.content[0].text;
   assert.ok(text.includes('T3 version: 0.1.4-nightly.20261027.3783'));
   assert.ok(text.includes('Compatibility: assumed compatible through the latest matching version range.'));
-  assert.ok(text.includes('New releases use the latest open-ended range'));
+  assert.ok(text.includes('matching nightly'));
   assert.ok(text.includes('must not cause UNKNOWN, FAIL, or an upgrade warning'));
 });
 
-test('missing or unmatched versions remain unsupported in the plain-language report', () => {
-  for (const version of [undefined, 'invalid', '0.1.3-nightly.20261025.3660']) {
+test('missing, unmatched and unlisted stable versions report unsupported', () => {
+  for (const version of [undefined, 'invalid', '0.1.3-nightly.20261025.3660', '0.1.4', '8.0.0']) {
     const result = proxyCheckResult(createPolicy(version).diagnostics());
     assert.equal(result.structuredContent.compatibility, 'unsupported');
-    assert.ok(result.content[0].text.includes('Compatibility: unsupported. No matching version range'));
-    assert.ok(result.content[0].text.includes('If no range matches, report unsupported and treat it as an installation failure'));
+    assert.ok(result.content[0].text.includes('Compatibility: unsupported. No explicit stable-version entry or matching prerelease range'));
+    assert.ok(result.content[0].text.includes('If no stable entry or range matches, report unsupported and treat it as an installation failure'));
   }
 });
 

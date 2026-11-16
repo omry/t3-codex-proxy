@@ -1,9 +1,15 @@
-// Matching ranges define support, including newer releases in open ranges.
+// Stable releases require explicit support. Prereleases use matching ranges.
 // Exact-version test coverage is separate; input guards protect every rewrite.
 export const FIX_SETS = [
   { id: 'legacy', range: { max: '0.1.3-nightly.20261025.3655' } },
   { id: 'current', range: { min: '0.1.3-nightly.20261025.3669' } },
 ];
+
+// Stable releases are supported only when they have an explicit fix-set
+// entry. Prerelease/nightly releases continue to use the ranges above.
+export const STABLE_FIX_SETS = Object.freeze({
+  '0.1.3': 'current',
+});
 
 export const TESTED_VERSIONS = [
   '0.1.3-nightly.20261025.3655',
@@ -54,6 +60,13 @@ export function matchesVersion(version, { min, max } = {}) {
 }
 
 export function selectCompatibility(version) {
+  const parsed = parseVersion(version);
+  if (parsed && parsed.pre.length === 0) {
+    // Build metadata does not change the semantic version's identity.
+    const stableVersion = parsed.core.join('.');
+    const fixSet = STABLE_FIX_SETS[stableVersion] ?? null;
+    return { fixSet, tested: Boolean(fixSet && TESTED_VERSIONS.includes(stableVersion)) };
+  }
   const matches = FIX_SETS.filter(fix => matchesVersion(version, fix.range));
   return { fixSet: matches.length === 1 ? matches[0].id : null, tested: TESTED_VERSIONS.includes(version) };
 }

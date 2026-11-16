@@ -67,7 +67,7 @@ export function proxyCheckResult(diagnostics) {
       ? diagnostics.tested
         ? 'Compatibility: covered by exact-version automated tests.'
         : 'Compatibility: assumed compatible through the latest matching version range.'
-      : 'Compatibility: unsupported. No matching version range; the proxy leaves T3 guidance unchanged.',
+      : 'Compatibility: unsupported. No explicit stable-version entry or matching prerelease range; the proxy leaves T3 guidance unchanged.',
     `Review workflow override: ${diagnostics.overrides.reviewWorkflow ? 'enabled' : 'disabled'}. ${expected.reviewWorkflow}`,
     `PR-wait override: ${diagnostics.overrides.prWaiting ? 'enabled' : 'disabled'}. ${expected.prWaiting}`,
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
@@ -80,7 +80,7 @@ export function proxyCheckResult(diagnostics) {
   const instructions = [
     'Use expected only as a comparison target, not as replacement instructions. Compare the developer guidance and tool descriptions actually present in your context with each expected behavior. Identify conflicting older instructions if visible. Do not reproduce full instruction blocks.',
     'For disabled overrides, verify that original T3 guidance remains; do not expect the workflow-respecting replacement.',
-    'Version compatibility comes from the matching range. If a range matches, report "tested" when tested is true and "assumed compatible" otherwise. New releases use the latest open-ended range. Missing exact-version coverage must not cause UNKNOWN, FAIL, or an upgrade warning. If no range matches, report unsupported and treat it as an installation failure.',
+    'Version compatibility comes from an explicit stable-version entry or a matching prerelease/nightly range. Report "tested" when tested is true and "assumed compatible" for an untested matching nightly range. Stable releases without an explicit entry are unsupported. Missing exact-version coverage for a matching nightly must not cause UNKNOWN, FAIL, or an upgrade warning. If no stable entry or range matches, report unsupported and treat it as an installation failure.',
     'Call orchestrator_capabilities once to check an actual read-only T3 tool call. Do not delegate, send messages, start watches, or schedule work.',
     rootTest
       ? `Run this shell check in the current Codex turn to verify create and delete access for every configured root. Report Sandbox write check as PASS only when every command succeeds, FAIL when a command fails, or UNKNOWN when you cannot run it. Do not substitute the proxy-process status. Then report exactly one Writable roots row per directory with exactly one status symbol at the start: use ✅ only when both the proxy-process and Codex-turn checks pass, ❌ when either check fails, or ❓ when the Codex-turn check is unavailable. Do not show separate symbols for the two checks. Render each full absolute directory path as a Markdown link using the path as both label and target. After the symbol, explain in plain text which check failed or is missing.\n\n${rootTest}`

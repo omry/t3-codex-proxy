@@ -216,7 +216,7 @@ test('environment routing follows moved sections and reports changed wording wit
   const fixture = fixtures.at(-1);
   const environment = fixture.sections[1];
   const events = [];
-  const policy = createPolicy('8.0.0', code => events.push(code), { reviewWorkflow: false, prWaiting: false, browserRouting: false });
+  const policy = createPolicy('8.0.0-nightly.1', code => events.push(code), { reviewWorkflow: false, prWaiting: false, browserRouting: false });
   const moved = { method: 'turn/start', params: { additionalContext: {
     t3_code_orchestration_07: { kind: 'application', value: environment },
   } } };
