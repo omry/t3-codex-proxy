@@ -24,6 +24,8 @@ const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process
 const delegateWaitFixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-delegate-wait-guidance-4580.json', import.meta.url), 'utf8'));
 const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
 const sections = fixture.sections ?? [fixture.context];
+const environmentBullets = sections.flatMap(section => section.split('\n'))
+  .filter(line => /^- (Another machine:|A machine the user names that is not linked|Unlinked \()/.test(line));
 const hasPageCondition = sections.some(section => section.includes('names a page or tab'));
 const overrides = resolveOverrides(process.argv[5] ? JSON.parse(process.argv[5]) : undefined);
 let child;
@@ -176,6 +178,13 @@ requires_openai_auth = false
   const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
   assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
   const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
+  const checkEnvironmentRouting = request => {
+    assert.equal(developerText(request).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && environmentBullets.length > 0);
+    for (const bullet of environmentBullets) {
+      assert.equal(developerText(request).includes(JSON.stringify(bullet).slice(1, -1)), !overrides.environmentRouting,
+        'Original machine-routing bullets are removed only when the override is enabled');
+    }
+  };
   assert.equal(developerText(modelRequests[0]).includes(REVIEW_GUIDANCE), overrides.reviewWorkflow);
   assert.equal(developerText(modelRequests[0]).includes(DELEGATE_WAITING_GUIDANCE), expectWorkflowWait);
   assert.equal(developerText(modelRequests[0]).includes(oldBullet), !overrides.reviewWorkflow);
@@ -185,7 +194,7 @@ requires_openai_auth = false
   }
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
-  assert.equal(developerText(modelRequests[0]).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && sections.some(section => section.includes('Another machine: `t3_environment_links`')));
+  checkEnvironmentRouting(modelRequests[0]);
   assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   await call('thread/inject_items', { threadId: thread.thread.id, items: Object.entries(context).map(([tag, entry], i) => {
     return { type: 'message', role: 'developer', content: [{ type: 'input_text',
@@ -203,7 +212,7 @@ requires_openai_auth = false
   }
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
-  assert.equal(developerText(modelRequests[1]).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && sections.some(section => section.includes('Another machine: `t3_environment_links`')));
+  checkEnvironmentRouting(modelRequests[1]);
   assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   requestDiagnostic = true;
   await runTurn(context);

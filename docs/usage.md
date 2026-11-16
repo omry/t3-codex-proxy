@@ -157,6 +157,13 @@ debugging does not request environment linking. This changes developer
 guidance; it cannot enforce model behavior or guarantee tool availability. The
 `environmentRouting` switch controls this rewrite.
 
+The known machine-routing variants include the shorter pair captured from
+nightly `0.1.10-nightly.20261116.4774`. Both complete bullets must match one known
+pair before either is rewritten. Changed or incomplete pairs remain unchanged
+and emit `unrecognized_environment_routing_guidance`. The 4774 environment
+fixture covers this section only; the release retains assumed compatibility
+through the nightly range.
+
 T3 tool results can still suggest ending the turn and awaiting a completion
 notification. The enabled `reviewWorkflow` replacement explicitly keeps a
 workflow-owned wait in control without rewriting those results. The workflow

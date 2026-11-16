@@ -58,9 +58,19 @@ const environmentRoutingRule = { context: [[
   '- When T3 environment work is explicitly requested, use `t3_environment_links` for linked environments and `t3_environment_link` for an unlinked machine with a hint from the user\'s words. Never ask for a pairing code in chat.',
 ]] };
 
+// Nightly 4774 shortens both machine-routing bullets. Keep each observed
+// pair together so a changed or missing counterpart cannot be partly rewritten.
+const environmentRouting4774 = { context: [[
+  '- Another machine: `t3_environment_links` lists linked ones. Pass its `environmentId` and that machine\'s `threadId` to T3 tools.',
+  `- ${ENVIRONMENT_ROUTING_GUIDANCE}\n- ${ENVIRONMENT_TARGETING_GUIDANCE}`,
+], [
+  '- Unlinked ("delegate this to my vps"): `t3_environment_link` with a `hint` from the user\'s words, never a pairing code in chat. No link tools: say to enable Settings → Labs → Linked environments.',
+  '- When T3 environment work is explicitly requested, use `t3_environment_links` for linked environments and `t3_environment_link` for an unlinked machine with a hint from the user\'s words. Never ask for a pairing code in chat. No link tools: say to enable Settings → Labs → Linked environments.',
+]] };
+
 const environmentRoutingRules = {
-  legacy: environmentRoutingRule,
-  current: environmentRoutingRule,
+  legacy: [environmentRoutingRule],
+  current: [environmentRoutingRule, environmentRouting4774],
 };
 
 const browserRoutingRules = {
@@ -189,15 +199,15 @@ export function createPolicy(version, report = () => {}, overrides) {
   const rules = compatibility.fixSet === 'legacy' ? legacyRules : compatibility.fixSet === 'current' ? currentRules : {};
   const featureRules = { reviewWorkflow: rules, prWaiting: prWaitingRules[compatibility.fixSet] ?? {},
     browserRouting: browserRoutingRules[compatibility.fixSet] ?? {},
-    environmentRouting: environmentRoutingRules[compatibility.fixSet] ?? {} };
+    environmentRouting: environmentRoutingRules[compatibility.fixSet] ?? [] };
   const observations = {
     reviewWorkflow: { rewrites: 0, unrecognized: 0 },
     prWaiting: { rewrites: 0, unrecognized: 0 },
     browserRouting: { rewrites: 0, unrecognized: 0 },
     environmentRouting: { rewrites: 0, unrecognized: 0 },
   };
-  const apply = (text, scope, feature) => rewriteGuidance(text, scope,
-    featureRules[feature], code => {
+  const apply = (text, scope, feature, rules = featureRules[feature]) => rewriteGuidance(text, scope,
+    rules, code => {
       observations[feature][code === 'guidance_rewritten' ? 'rewrites' : 'unrecognized']++;
       report(code);
     }, feature);
@@ -213,9 +223,11 @@ export function createPolicy(version, report = () => {}, overrides) {
     }
     if (/^t3_code_orchestration_\d+$/.test(key) && compatibility.fixSet && settings.environmentRouting && typeof value === 'string' &&
         /t3_environment_links|t3_environment_link|Another machine|machine the user names|environment linking/i.test(value)) {
-      const pairs = featureRules.environmentRouting.context;
-      if (pairs.every(([before]) => value.includes(before))) value = apply(value, 'context', 'environmentRouting');
-      else if (!pairs.every(([, after]) => value.includes(after))) {
+      const variants = featureRules.environmentRouting;
+      const lines = value.split(/\r?\n/);
+      const matched = variants.find(rules => rules.context.every(([before]) => lines.includes(before)));
+      if (matched) value = apply(value, 'context', 'environmentRouting', matched);
+      else if (!variants.some(rules => rules.context.every(([, after]) => value.includes(after)))) {
         observations.environmentRouting.unrecognized++;
         report('unrecognized_environment_routing_guidance');
       }

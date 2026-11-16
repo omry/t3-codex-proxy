@@ -1,5 +1,42 @@
 # Verification
 
+## Nightly 4774 environment routing
+
+The live check on T3 `0.1.10-nightly.20261116.4774` still received the original
+machine-routing instructions. T3 had shortened both bullets, so neither matched
+the proxy's older exact pair. The guarded rewrite left the section unchanged.
+
+The source now accepts the captured 4774 pair as a second known variant. Both
+complete original lines must match before either changes. The replacement
+requires an explicit T3 environment request, preserves `environmentId` and
+`threadId` targeting, and retains the pairing-code and missing-link-tools
+instructions. Unknown or incomplete pairs remain unchanged with a content-free
+warning. Stable-version selection and nightly range selection are unchanged.
+
+The environment-only fixture records the exact received section and its source.
+It does not claim a complete capture of 4774 guidance. The reproduction failed
+before the fix and passed afterward. The initial 205-test suite and syntax
+checks passed. Review then found and corrected CRLF line-ending handling,
+with added regression coverage for old and new bullet pairs.
+Tests cover initial context, tagged reinjection, idempotence, unrelated text,
+disabled passthrough, all override combinations, unsupported stable releases,
+the context byte limit, and rejection of missing or changed bullets.
+
+Enabled and all-disabled isolated real-Codex checks passed with Codex 0.169.0.
+Those checks combined the captured 4774 environment section with the existing
+4580 fixture for other surfaces. They verified delivery and removal of the
+original machine-routing bullets before initial and reinjected inference.
+Fake local MCP and model servers were used; no live environment action ran.
+The full suite required execution outside the sandbox for loopback sockets
+and child processes, with temporary files in the workspace.
+
+After restarting T3 on 2026-11-16, live `proxy-check` passed on nightly 4774.
+The received machine-routing context contained the explicit-request replacement
+and omitted both original unconditional-linking bullets. All seven compatibility
+checks passed, a read-only T3 capability call succeeded, and the configured
+writable root passed the Codex-turn create/delete check. This verifies delivery
+of the source behavior fix; it does not guarantee model compliance on every task.
+
 ## Explicit stable-version support
 
 Stable T3 releases require an explicit version-to-fix-set entry. Stable `0.1.3`

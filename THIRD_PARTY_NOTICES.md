@@ -8,6 +8,10 @@ in `test/fixtures/t3-guidance.json` are derived from
 `v0.1.3-nightly.20261027.3754`). These versions identify fixture provenance;
 fix selection ranges and tested support are recorded separately.
 
+The environment-routing strings in `src/policy.mjs` and
+`test/fixtures/t3-environment-guidance-4774.json` also derive from T3 Code
+`v0.1.10-nightly.20261116.4774`, captured from live developer guidance.
+
 T3 Code's MIT notice is reproduced below. This project does not bundle T3 Code
 or the Codex CLI.
 
