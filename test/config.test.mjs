@@ -129,5 +129,7 @@ test('codex discovery uses executable PATH entries without invoking a shell', as
   const codex = path.join(root, 'codex'); await writeFile(codex, '#!/bin/sh\n'); await chmod(codex, 0o755);
   assert.equal(findCodexExecutable({ PATH: root }), codex);
   assert.equal(findCodexExecutable({ PATH: path.join(root, 'missing') }), '');
+  const windowsShim = path.join(root, 'codex.cmd'); await writeFile(windowsShim, '@echo off\r\n'); await chmod(windowsShim, 0o755);
+  assert.equal(findCodexExecutable({ PATH: root }, 'win32'), windowsShim);
   await access(codex);
 });

@@ -10,6 +10,17 @@ import { startMcpProxy } from './mcp-proxy.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from './diagnostics.mjs';
 
 const WRAPPER_PATH = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
+const WINDOWS_SHELL_META = /["&|<>()^%!;]/;
+
+export function usesWindowsCommandShell(realCodex, platform = process.platform) {
+  return platform === 'win32' && /\.(?:cmd|bat)$/i.test(realCodex);
+}
+
+export function windowsShellInputIsSafe(value) {
+  return typeof value === 'string' &&
+    !WINDOWS_SHELL_META.test(value) &&
+    ![0, 10, 13].some(code => value.includes(String.fromCharCode(code)));
+}
 
 function rewriteSandboxPolicy(message, additionalWritableRoots = []) {
   if (message?.method !== 'turn/start') return message;
@@ -137,7 +148,16 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     await assertNotRecursive(realCodex);
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
-    child = spawn(realCodex, args, { detached: ownGroup, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+    if (usesWindowsCommandShell(realCodex) &&
+        [realCodex, ...args].some(value => !windowsShellInputIsSafe(value))) {
+      throw new Error('unsafe_windows_command_shell_argument');
+    }
+    child = spawn(realCodex, args, {
+      detached: ownGroup,
+      shell: usesWindowsCommandShell(realCodex),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+    });
     // A launcher can exit while descendants still hold its stdio pipes open.
     // Close that owned group too; do not wait forever for the 'close' event.
     child.once('exit', () => { if (ownGroup) terminate('SIGTERM'); });
