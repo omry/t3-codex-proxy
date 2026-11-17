@@ -1,6 +1,6 @@
 {
   "name": "t3-codex-proxy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A local compatibility wrapper for the T3 Codex app-server",
   "keywords": ["t3", "codex", "app-server", "proxy"],
   "license": "MIT",
