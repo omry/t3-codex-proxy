@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  CODEX_VERSION: '0.169.0'
+
+jobs:
+  unit:
+    name: Unit and package checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install package metadata
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run syntax checks
+        run: npm run check
+      - name: Run tests
+        run: npm test
+      - name: Check package contents
+        run: npm run pack:check
+
+  isolated-codex-smoke:
+    name: Isolated Codex smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Codex CLI
+        run: npm install --global @openai/codex@${{ env.CODEX_VERSION }} --no-audit --no-fund
+      - name: Resolve Codex launcher
+        run: node scripts/resolve-codex.mjs
+        id: codex
+      - name: Run isolated real-Codex smoke test
+        env:
+          CODEX_PATH: ${{ steps.codex.outputs.path }}
+        run: node scripts/smoke-codex.mjs

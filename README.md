@@ -6,7 +6,8 @@ grant configured directories to workspace-write turns. T3 itself is not
 modified.
 
 The package requires Node.js 24 or newer and an existing Codex CLI
-installation. It has no runtime dependencies.
+installation. It has no runtime dependencies. On Windows, npm-installed
+`codex.cmd` and `codex.bat` launchers are supported.
 
 ## Why it exists
 
@@ -91,6 +92,9 @@ uses the Codex CLI, and set **Binary path** to:
 ```sh
 command -v t3-codex-proxy
 ```
+
+On Windows PowerShell, use the absolute path returned by
+Get-Command t3-codex-proxy.
 
 Then fully quit and reopen T3 Code. This restarts its shared app-server with
 the wrapper. Existing conversations use the wrapper when resumed; a new

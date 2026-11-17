@@ -27,9 +27,9 @@ export function resolveConfigFile({ env = process.env, packageConfigFile } = {})
   return path.join(defaultConfigDirectory(env), 't3-codex-proxy', 'config.json');
 }
 
-export function findCodexExecutable(env = process.env) {
+export function findCodexExecutable(env = process.env, platform = process.platform) {
   for (const directory of String(env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
-    for (const name of process.platform === 'win32' ? ['codex.exe', 'codex'] : ['codex']) {
+    for (const name of platform === 'win32' ? ['codex.exe', 'codex.cmd', 'codex.bat', 'codex'] : ['codex']) {
       const candidate = path.join(directory, name);
       try { accessSync(candidate, fsConstants.X_OK); return candidate; } catch { /* Try the next PATH entry. */ }
     }

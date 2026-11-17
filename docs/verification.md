@@ -275,6 +275,12 @@ Run `npm run check` and `npm test`. Tests use local fake peers and installed
 fake Codex layouts; they do not update the real Codex installation or call a
 paid model endpoint.
 
+The GitHub Actions workflow also runs the isolated real-Codex smoke test on
+`ubuntu-latest`, `macos-latest`, and `windows-latest`. It installs the pinned
+Codex CLI release, points it at the local fake model and MCP services, and
+does not require an OpenAI subscription or API key. The Windows job resolves
+the npm `codex.cmd` launcher and exercises the wrapper's command-shell path.
+
 Coverage includes:
 
 - Exact scoped developer-guidance rewrites, user/untrusted context preservation,

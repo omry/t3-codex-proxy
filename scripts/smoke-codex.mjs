@@ -13,8 +13,8 @@ import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUID
 import { resolveOverrides } from '../src/config.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
 
-const realCodex = process.argv[2];
-if (!realCodex || !path.isAbsolute(realCodex)) throw new Error('Supply an absolute real Codex path.');
+const realCodex = process.argv[2] ?? process.env.CODEX_PATH;
+if (!realCodex || !path.isAbsolute(realCodex)) throw new Error('Supply an absolute real Codex path or set CODEX_PATH.');
 const root = await mkdtemp(path.join(tmpdir(), 't3-codex-proxy-smoke-'));
 const home = path.join(root, 'codex-home');
 const workspace = path.join(root, 'workspace');
@@ -253,5 +253,5 @@ requires_openai_auth = false
   }
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

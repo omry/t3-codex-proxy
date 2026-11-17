@@ -4,7 +4,9 @@ Detailed reference for [T3 Codex Proxy](../README.md).
 
 ## Backend environment
 
-Requires Node.js 24+ and an existing Codex CLI provider. For the Windows desktop app with a WSL backend, use paths and Node.js from inside that backend.
+Requires Node.js 24+ and an existing Codex CLI provider. Native Windows npm
+launchers (`codex.cmd` and `codex.bat`) are supported. For the Windows desktop
+app with a WSL backend, use paths and Node.js from inside that backend.
 
 ## Published installation
 
@@ -34,7 +36,8 @@ permissions. The normal app-server process never exposes this page.
 1. In T3 Code, open **Settings → Providers → Codex**.
 2. Select the provider that uses your Codex CLI.
 3. Set its **Binary path** to the absolute path printed by
-   `command -v t3-codex-proxy`.
+   `command -v t3-codex-proxy`. On Windows PowerShell, use the path returned by
+   Get-Command t3-codex-proxy.
 4. Fully quit and reopen T3 Code so its shared app-server starts through the
    wrapper.
 5. Resume an existing conversation or open a new one with that provider and
