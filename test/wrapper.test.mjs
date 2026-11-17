@@ -10,11 +10,23 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { BROWSER_ROUTING_GUIDANCE, REVIEW_GUIDANCE } from '../src/policy.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
-import { rewriteClientMessage } from '../src/wrapper.mjs';
+import { rewriteClientMessage, usesWindowsCommandShell, windowsShellInputIsSafe } from '../src/wrapper.mjs';
 
 const binary = fileURLToPath(new URL('../bin/t3-codex-proxy.mjs', import.meta.url));
 const fake = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance.json', import.meta.url)));
+
+test('Windows command shims use the shell while native executables stay direct', () => {
+  assert.equal(usesWindowsCommandShell('C:\\Program Files\\Codex\\codex.cmd', 'win32'), true);
+  assert.equal(usesWindowsCommandShell('C:\\Program Files\\Codex\\codex.bat', 'win32'), true);
+  assert.equal(usesWindowsCommandShell('C:\\Program Files\\Codex\\codex.exe', 'win32'), false);
+  assert.equal(usesWindowsCommandShell('/usr/local/bin/codex', 'linux'), false);
+  assert.equal(windowsShellInputIsSafe('C:\\Program Files\\Codex\\codex.cmd'), true);
+  assert.equal(windowsShellInputIsSafe('--listen=stdio://'), true);
+  for (const unsafe of ['C:\\bad&path\\codex.cmd', '--config=a|b', 'line\nfeed', 'percent%value']) {
+    assert.equal(windowsShellInputIsSafe(unsafe), false);
+  }
+});
 
 test('exact diagnostic requests gain tool-discovery context without changing user input', () => {
   for (const text of ['proxy-check', 'proxy_check', '  proxy-check\n']) {
