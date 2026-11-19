@@ -148,6 +148,12 @@ prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[2].map(text =
   .replace('Skip PRs you only read or review, and PRs named only as background.',
     'Skip PRs you only read or review and PRs named only as background.')));
 
+// Nightly 4928 appends PR-tool routing and issue linking. Preserve those rules
+// on both sides of the existing full-block substitution.
+prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[3].map(text => text.replace(
+  '\n</pull_request_linking>',
+  ' When pull_request_* tools are listed, use them, not gh or cafe, to read, list, open, edit, review, reply on, close, or merge PRs, and ci_logs and ci_rerun for their checks. pull_request_create links for you.\nIf available, call link_issue for each issue you take on or file, even via CLI; skip issues you only read.\n</pull_request_linking>')));
+
 function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;
   let result = text;

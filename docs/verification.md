@@ -1,5 +1,36 @@
 # Verification
 
+## Nightly 4928 PR waiting
+
+The live proxy check on 2026-11-19 found a PR-wait conflict on T3
+`0.1.11-nightly.20261119.4928`. The runtime block now appends PR-tool routing
+and issue-linking instructions. The older complete-block guard did not match,
+so unconditional watching and end-of-turn rules remained in received context.
+The other six compatibility checks passed. A read-only T3 capability call and
+the configured writable root's Codex-turn create/delete check also passed.
+
+The new exact variant preserves the added tool-routing and issue-linking text
+while restoring workflow control over PR waits. The PR-only fixture records
+the observed block and its provenance. Unknown surrounding instructions remain
+unchanged with a content-free warning. The regression failed before the fix
+and passed afterward. Tests cover enabled and disabled behavior, tagged
+reinjection, idempotence, unrelated context and user-input preservation, all
+override combinations, unsupported stable releases, and the context byte limit.
+
+All 222 tests and syntax checks pass. Enabled and all-disabled isolated checks
+pass with Codex 0.170.0, using local fake model and MCP servers. Their composite
+input combines the captured 4928 PR block and 4774 environment section with the
+earlier 4580 fixture for other surfaces. These checks verify delivery before
+initial and reinjected inference; they do not exercise a live PR wait. The
+full suite and smoke checks ran outside the sandbox for loopback sockets and
+child processes. Package dry-run validation also passes.
+
+This is a source behavior fix. The running shared proxy has not been restarted
+or verified with the new source. Restart T3 after updating, then run
+`proxy-check` to verify live delivery. This nightly retains assumed
+compatibility through its matching range; the partial capture does not add it
+to the complete tested-version list.
+
 ## Nightly 4774 environment routing
 
 The live check on T3 `0.1.10-nightly.20261116.4774` still received the original

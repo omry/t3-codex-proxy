@@ -1,0 +1,82 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createPolicy, PR_WAITING_GUIDANCE } from '../src/policy.mjs';
+
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-pr-guidance-4928.json', import.meta.url)));
+const version = fixture.sourceVersion.slice(1);
+const runtime = `<runtime_info>private runtime marker</runtime_info>\n\n${fixture.pullRequestInstructions}`;
+const makeMessage = (value = runtime) => ({ method: 'turn/start', params: { additionalContext: {
+  t3_code_runtime: { kind: 'application', value },
+  other: { kind: 'application', value },
+  t3_code_untrusted: { kind: 'untrusted', value },
+}, input: [{ type: 'text', text: value }] } });
+
+for (const enabled of [false, true]) {
+  test(`4928 PR waiting ${enabled ? 'enabled' : 'disabled'}: context, reinjection and routing preservation`, () => {
+    const events = [];
+    const policy = createPolicy(version, event => events.push(event), { prWaiting: enabled });
+    const message = makeMessage();
+    const before = structuredClone(message);
+    policy.rewriteDeveloperContext(message);
+    const output = message.params.additionalContext.t3_code_runtime.value;
+    assert.equal(output.includes(PR_WAITING_GUIDANCE), enabled);
+    assert.equal(output.includes('For PR waits, no sleep'), !enabled);
+    assert.equal(output.includes('Call watch_pull_request when asked'), !enabled);
+    if (enabled) {
+      assert.ok(output.startsWith('<runtime_info>private runtime marker</runtime_info>'));
+      const linking = fixture.pullRequestInstructions.split(' Call watch_pull_request')[0];
+      assert.ok(output.includes(linking));
+      const routing = fixture.pullRequestInstructions.split(' When pull_request_*')[1];
+      assert.ok(output.endsWith(` When pull_request_*${routing}`));
+      assert.ok(output.includes('Finish any needed branch update and push first'));
+      assert.ok(output.includes('Delegated children never watch'));
+      assert.ok(output.includes('Before handback, call unwatch_pull_request'));
+      assert.ok(Buffer.byteLength(output) <= 4000);
+    } else assert.equal(output, runtime);
+    before.params.additionalContext.t3_code_runtime.value = output;
+    assert.deepEqual(message, before);
+    assert.deepEqual(policy.rewriteDeveloperContext(structuredClone(message)), message);
+
+    const tag = `<t3_code_runtime>${runtime}</t3_code_runtime>`;
+    const injection = { method: 'thread/inject_items', params: { items: [
+      { type: 'message', role: 'developer', content: [{ type: 'input_text', text: tag }] },
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: tag }] },
+      { type: 'message', role: 'developer', content: [{ type: 'input_text', text: runtime }] },
+    ] } };
+    policy.rewriteDeveloperContext(injection);
+    assert.equal(injection.params.items[0].content[0].text, `<t3_code_runtime>${output}</t3_code_runtime>`);
+    assert.equal(injection.params.items[1].content[0].text, tag);
+    assert.equal(injection.params.items[2].content[0].text, runtime);
+    assert.deepEqual(policy.rewriteDeveloperContext(structuredClone(injection)), injection);
+    assert.ok(!events.includes('unrecognized_pr_wait_guidance'));
+  });
+}
+
+test('4928 PR waiting requires the complete observed block', () => {
+  for (const sentence of ['Links and watches persist across pushes.',
+    'pull_request_create links for you.', 'If available, call link_issue']) {
+    const events = [];
+    const policy = createPolicy(version, event => events.push(event));
+    const message = makeMessage(runtime.replace(sentence, 'private changed instruction'));
+    const before = structuredClone(message);
+    policy.rewriteDeveloperContext(message);
+    assert.deepEqual(message, before);
+    assert.ok(events.includes('unrecognized_pr_wait_guidance'));
+    assert.ok(!events.join(' ').includes('private changed instruction'));
+  }
+});
+
+test('4928 PR waiting remains independent of other overrides and unsupported stable releases', () => {
+  for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true])
+    for (const browserRouting of [false, true]) for (const environmentRouting of [false, true]) {
+      const message = makeMessage();
+      createPolicy(version, () => {}, { reviewWorkflow, prWaiting, browserRouting, environmentRouting })
+        .rewriteDeveloperContext(message);
+      assert.equal(message.params.additionalContext.t3_code_runtime.value.includes(PR_WAITING_GUIDANCE), prWaiting);
+    }
+  const message = makeMessage();
+  const before = structuredClone(message);
+  createPolicy('0.1.11').rewriteDeveloperContext(message);
+  assert.deepEqual(message, before);
+});

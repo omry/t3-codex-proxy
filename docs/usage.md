@@ -143,6 +143,10 @@ changes guidance; it does not add a timer or a scheduler to T3.
 The PR-wait fix rewrites the known runtime PR block and watch-tool description,
 retaining linking rules and unrelated runtime information. Repeat the README installation
 check after upgrading to detect any changed instruction wording.
+Known variants include the block captured from nightly
+`0.1.11-nightly.20261119.4928`, preserving its added PR-tool routing and
+issue-linking instructions. That fixture covers the PR block only; the release
+retains assumed compatibility through the nightly range.
 
 The browser-routing fix replaces the condition that naming a page or tab permits
 browser automation. It prioritizes the user's selected tools and workflow, then
