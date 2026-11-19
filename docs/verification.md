@@ -25,11 +25,20 @@ initial and reinjected inference; they do not exercise a live PR wait. The
 full suite and smoke checks ran outside the sandbox for loopback sockets and
 child processes. Package dry-run validation also passes.
 
-This is a source behavior fix. The running shared proxy has not been restarted
-or verified with the new source. Restart T3 after updating, then run
-`proxy-check` to verify live delivery. This nightly retains assumed
-compatibility through its matching range; the partial capture does not add it
-to the complete tested-version list.
+After restarting T3 on 2026-11-19, live `proxy-check` passed all seven
+compatibility checks on nightly 4928. The newly received PR runtime block
+contained the workflow-owned waiting guidance and preserved the added PR-tool
+and issue-linking instructions. The configured writable root passed both the
+proxy-process and Codex-turn create/delete checks. This verifies the behavior
+fix in the running session; it does not guarantee model compliance on every
+task. This nightly retains assumed compatibility through its matching range;
+the partial capture does not add it to the complete tested-version list.
+
+After the user reviewed that live result and approved publication, npm login
+and publication used browser approval with the user's YubiKey. Version 0.1.3
+became available as `latest` after npm processing. The downloaded registry
+tarball matched the approved package's SHA-1 checksum:
+`0305682360f114f99917664732b2ec3f9f27093a`.
 
 ## Nightly 4774 environment routing
 
