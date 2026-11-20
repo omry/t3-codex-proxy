@@ -1,5 +1,34 @@
 # Verification
 
+## Workflow coverage before PR watching
+
+Verified locally on 2026-11-20. The PR-wait guidance now requires checking the
+selected workflow and applicable skills before choosing T3 watching. A
+standalone prerequisite PR does not automatically leave the workflow. The
+guidance preserves applicable request, polling, evidence, retry, recovery,
+and completion gates, and separates later owner-merge notifications from
+CI/review qualification.
+
+The new guidance assertions failed before the source change and passed after
+it. All 222 tests and syntax checks pass, including disabled passthrough,
+reinjection, idempotence, and context byte limits. The full suite needed
+execution outside the sandbox for local loopback listeners and child processes.
+An isolated real-Codex 0.171.0 smoke check passed with enabled defaults and
+advertised nightly 4928, combining its captured PR block with the 4774
+environment section and earlier 4580 inputs for other surfaces. Fake local
+model and MCP servers verified delivery in initial and reinjected context.
+
+After the user restarted T3, live `proxy-check` passed all seven compatibility
+checks on `0.1.12-nightly.20261120.4994`. The received PR runtime block included
+the new workflow-coverage, prerequisite-PR, and owner-merge guidance. T3 tool
+discovery was connected, and the configured writable root passed both checks.
+The nightly retains assumed compatibility through its matching range.
+
+This fixes instruction delivery in the running session. It does not replay the
+reported Hydra incident or prove model compliance on an actual PR. After
+reviewing the live result, the user authorized the PR cycle, merge, and
+publication. Publication remains pending.
+
 ## Nightly 4928 PR waiting
 
 The live proxy check on 2026-11-19 found a PR-wait conflict on T3

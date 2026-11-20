@@ -24,6 +24,11 @@ for (const enabled of [false, true]) {
     assert.equal(output.includes('For PR waits, no sleep'), !enabled);
     assert.equal(output.includes('Call watch_pull_request when asked'), !enabled);
     if (enabled) {
+      assert.ok(output.includes("Before choosing T3 watching, check the user's selected workflow and applicable skills for an integrated PR review/check mechanism."));
+      assert.ok(output.includes('A standalone prerequisite PR does not automatically leave that workflow.'));
+      assert.ok(output.includes('Use its request, polling, evidence, retry, recovery, and completion gates when applicable.'));
+      assert.ok(output.includes('Use watch_pull_request as a fallback only after establishing that no workflow wait mechanism applies, then end the turn.'));
+      assert.ok(output.includes('Watching for a later owner merge must not bypass CI/review qualification.'));
       assert.ok(output.startsWith('<runtime_info>private runtime marker</runtime_info>'));
       const linking = fixture.pullRequestInstructions.split(' Call watch_pull_request')[0];
       assert.ok(output.includes(linking));
