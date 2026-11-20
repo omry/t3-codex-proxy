@@ -141,8 +141,19 @@ Without a workflow-owned wait, follow T3's `next` and completion notifications.
 Cancellation instructions, schemas and tool results remain unchanged. This
 changes guidance; it does not add a timer or a scheduler to T3.
 The PR-wait fix rewrites the known runtime PR block and watch-tool description,
-retaining linking rules and unrelated runtime information. Repeat the README installation
-check after upgrading to detect any changed instruction wording.
+retaining linking rules and unrelated runtime information. Before choosing T3
+watching, check the selected workflow and applicable skills for an integrated
+PR review/check mechanism. A standalone prerequisite PR does not automatically
+leave that workflow. When applicable, use its request, polling, evidence,
+retry, recovery, and completion gates, preserving its deadlines and retry limits.
+Use T3 watching as a fallback only after establishing that no workflow wait
+mechanism applies. Notifications may supplement workflow waits; they do not
+satisfy or replace the gates. Watching for a later owner merge must not bypass
+CI/review qualification. This changes delivered guidance; it does not guarantee
+that a model correctly classifies every PR.
+
+Repeat the README installation check after upgrading to detect any changed
+instruction wording.
 Known variants include the block captured from nightly
 `0.1.11-nightly.20261119.4928`, preserving its added PR-tool routing and
 issue-linking instructions. That fixture covers the PR block only; the release
