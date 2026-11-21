@@ -126,8 +126,9 @@ npm test
 npm run pack:check
 ```
 
-For a release, publish a tagged npm version from this repository. Use Sapling
-for repository history and commits.
+See [RELEASE.md](RELEASE.md) for the release procedure, including npm
+publication and the matching GitHub release. Use Sapling for repository history
+and commits.
 
 MIT licensed. See [LICENSE](LICENSE) and
 [third-party notices](THIRD_PARTY_NOTICES.md).
