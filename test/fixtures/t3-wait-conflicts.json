@@ -1,0 +1,27 @@
+{
+  "sourceCommit": "dc84b0962efa",
+  "source": "Local T3 checkout: apps/server/src/mcp/toolkits/orchestrator/tools.ts and packages/contracts/src/orchestratorMcp.ts. Descriptions are verbatim; outputSchema is a minimal fixture containing the verbatim next literal.",
+  "tools": [
+    {
+      "name": "delegate_task",
+      "description": "Start one child agent with only `task`. No parent history. Separate checkout or PR per child: `isolation:'worktree'`. Keep `taskId` for `task_status` and `task_cancel`.",
+      "inputSchema": { "type": "object" },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "next": { "const": "Completion wakes this thread, so end your turn. Do not wait on it or poll it." }
+        }
+      }
+    },
+    {
+      "name": "task_status",
+      "description": "Read one delegated task you started. Do not call it on a running task before its completion wakes you. `workState`: working, waiting_for_children, result_available. A finished turn with live child work is not done. `summary`: final result. Reading it marks it delivered.",
+      "inputSchema": { "type": "object" }
+    },
+    {
+      "name": "t3_thread_wait",
+      "description": "Wait for a thread's run to finish. No `runId`: latest. Idle: at once. On timeout, with `next` end your turn; without, call again.",
+      "inputSchema": { "type": "object" }
+    }
+  ]
+}

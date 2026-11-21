@@ -9,6 +9,7 @@ import { PROXY_CHECK_TOOL, proxyCheckResult } from '../src/diagnostics.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-0.1.3.json', import.meta.url)));
 const environmentFixture = JSON.parse(readFileSync(new URL('./fixtures/t3-guidance-4580.json', import.meta.url)));
+const waitFixture = JSON.parse(readFileSync(new URL('./fixtures/t3-wait-conflicts.json', import.meta.url)));
 
 async function setup(t, overrides, handler) {
   const requests = [];
@@ -118,6 +119,69 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(Number(requests[1].headers['content-length']), Buffer.byteLength(JSON.stringify(requests[1].message)));
   });
 }
+
+test('proxy-check fails on remaining wait conflicts after workflow guidance is rewritten', async t => {
+  const { request } = await setup(t, undefined, (_req, res, message) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { tools: waitFixture.tools } }));
+  });
+  const response = await (await request('POST', { jsonrpc: '2.0', id: 19, method: 'tools/call',
+    params: { name: 'proxy-check', arguments: {} } })).json();
+  const evidence = response.result.structuredContent.delegateWaitingEvidence;
+  assert.equal(evidence?.status, 'fail');
+  assert.deepEqual(evidence.findings.map(({ tool, surface }) => [tool, surface]), [
+    ['delegate_task', 'outputSchema'], ['t3_thread_wait', 'description'],
+  ]);
+  assert.deepEqual(evidence.missingTools, []);
+  const text = response.result.content[0].text;
+  assert.ok(text.includes('Delegate waiting and recovery: FAIL'));
+  assert.ok(text.includes('Completion wakes this thread, so end your turn. Do not wait on it or poll it.'));
+  assert.ok(text.includes('On timeout, with `next` end your turn; without, call again.'));
+  assert.ok(!text.includes('A next suggestion in an unchanged tool result does not by itself fail the check'));
+  const listed = await (await request('POST', { jsonrpc: '2.0', id: 20, method: 'tools/list' })).json();
+  assert.equal(listed.result.tools[0].outputSchema.properties.next.const, waitFixture.tools[0].outputSchema.properties.next.const);
+  assert.equal(listed.result.tools[2].description, waitFixture.tools[2].description);
+});
+
+test('proxy-check detects each unchanged wait surface independently', () => {
+  for (const name of ['delegate_task', 'task_status', 't3_thread_wait']) {
+    const tool = waitFixture.tools.find(tool => tool.name === name);
+    const result = proxyCheckResult(createPolicy('0.1.3').diagnostics(), { tools: [tool] });
+    const evidence = result.structuredContent.delegateWaitingEvidence;
+    assert.equal(evidence.status, 'fail', name);
+    assert.ok(evidence.findings.every(finding => finding.tool === name));
+    assert.ok(result.content[0].text.includes('Delegate waiting and recovery: FAIL'));
+  }
+});
+
+test('disabled waiting override reports preserved conflicts without failing passthrough', async t => {
+  const { request } = await setup(t, { reviewWorkflow: false }, (_req, res, message) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { tools: waitFixture.tools } }));
+  });
+  const response = await (await request('POST', { jsonrpc: '2.0', id: 21, method: 'tools/call',
+    params: { name: 'proxy-check', arguments: {} } })).json();
+  const evidence = response.result.structuredContent.delegateWaitingEvidence;
+  assert.equal(evidence.status, 'disabled');
+  assert.equal(evidence.findings.length, 3);
+  assert.ok(!response.result.content[0].text.includes('Delegate waiting and recovery: FAIL'));
+});
+
+test('missing, partial and conflict-free waiting metadata never imply a diagnostic pass', () => {
+  const policy = createPolicy('0.1.3');
+  const tools = waitFixture.tools.map(({ name, inputSchema }) => ({
+    name, inputSchema, description: 'Follow the workflow when waiting.',
+  }));
+  for (const metadata of [undefined, { tools: [] }, { tools: tools.slice(0, 2), nextCursor: 'more' }, { tools }]) {
+    const result = proxyCheckResult(policy.diagnostics(), metadata);
+    const evidence = result.structuredContent.delegateWaitingEvidence;
+    assert.equal(evidence.status, 'unknown');
+    assert.deepEqual(evidence.findings, []);
+    assert.ok(result.content[0].text.includes('Delegate waiting evidence: UNKNOWN'));
+    if (metadata?.nextCursor) assert.equal(evidence.listComplete, false);
+    if (!metadata || metadata.tools.length !== 3) assert.ok(evidence.missingTools.length > 0);
+  }
+});
 
 test('delegate status responses preserve timeout, cancellation and next fields verbatim', async t => {
   const result = { content: [{ type: 'text', text: 'running delegate result' }], structuredContent: {

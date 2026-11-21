@@ -7,7 +7,38 @@ export const PROXY_CHECK_TOOL = {
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
-export function proxyCheckResult(diagnostics) {
+function delegateWaitingEvidence(metadata, enabled) {
+  const names = ['delegate_task', 'task_status', 't3_thread_wait'];
+  const instructions = [
+    'Completion wakes this thread, so end your turn. Do not wait on it or poll it.',
+    'Completion wakes this thread. End your turn unless you need this result now.',
+    'Do not call it on a running task before its completion wakes you.',
+    'On timeout, with `next` end your turn; without, call again.',
+  ];
+  const tools = Array.isArray(metadata?.tools) ? metadata.tools : [];
+  const findings = [];
+  for (const tool of tools) {
+    if (!names.includes(tool?.name)) continue;
+    for (const instruction of instructions) {
+      if (typeof tool.description === 'string' && tool.description.includes(instruction)) {
+        findings.push({ tool: tool.name, surface: 'description', instruction });
+      }
+      if (tool.outputSchema && JSON.stringify(tool.outputSchema).includes(JSON.stringify(instruction))) {
+        findings.push({ tool: tool.name, surface: 'outputSchema', instruction });
+      }
+    }
+  }
+  const missingTools = names.filter(name => !tools.some(tool => tool?.name === name && typeof tool.description === 'string'));
+  return {
+    status: !enabled ? 'disabled' : findings.length ? 'fail' : 'unknown',
+    findings,
+    missingTools,
+    listComplete: Array.isArray(metadata?.tools) && !metadata.nextCursor,
+  };
+}
+
+export function proxyCheckResult(diagnostics, toolMetadata) {
+  const waitingEvidence = delegateWaitingEvidence(toolMetadata, diagnostics.overrides.reviewWorkflow);
   const writableRoots = diagnostics.writableRoots ?? { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured' };
   const rootPaths = Array.isArray(writableRoots.paths) ? writableRoots.paths : [];
   const rootEntries = Array.isArray(writableRoots.entries) && writableRoots.entries.length === rootPaths.length
@@ -55,6 +86,7 @@ export function proxyCheckResult(diagnostics) {
     agentCheck: rootTest ? 'required' : 'not_applicable',
   }));
   const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded',
+    delegateWaitingEvidence: waitingEvidence,
     writableRoots: { ...writableRoots, entries: reportEntries, agentCheck: rootTest ? 'required' : 'not_applicable' }, expected };
   const rootReport = rootEntries.length === 0 ? '- none configured'
     : rootEntries.map(entry => entry.processWritable
@@ -73,6 +105,15 @@ export function proxyCheckResult(diagnostics) {
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
     `Environment-routing override: ${diagnostics.overrides.environmentRouting ? 'enabled' : 'disabled'}. ${expected.environmentRouting}`,
     'T3 tool discovery: connected. The upstream tools/list request succeeded.',
+    waitingEvidence.status === 'fail'
+      ? 'Delegate waiting and recovery: FAIL. Unconditional waiting restrictions remain in effective tool metadata, even with workflow-priority developer guidance.'
+      : waitingEvidence.status === 'disabled'
+        ? 'Delegate waiting evidence: override disabled; preserved restrictions do not establish workflow-wait support.'
+        : 'Delegate waiting evidence: UNKNOWN until received developer guidance, waiting-tool descriptions and output schemas are inspected. No detected restriction is not proof of working waits.',
+    ...waitingEvidence.findings.map(({ tool, surface, instruction }) => `- ${tool} ${surface}: ${JSON.stringify(instruction)}`),
+    ...(!waitingEvidence.listComplete || waitingEvidence.missingTools.length
+      ? [`Waiting metadata is incomplete. Missing tools: ${waitingEvidence.missingTools.join(', ') || 'none on this page'}; tools/list ${waitingEvidence.listComplete ? 'complete' : 'incomplete or unavailable'}. Inspect missing metadata in the current tool context; absent evidence is UNKNOWN.`]
+      : []),
     'Writable roots (per directory):\n' + rootReport,
     rootTest ? `Sandbox write check: pending agent verification for ${rootPaths.length} configured root(s).` : 'Sandbox write check: not applicable; no writable roots are configured.',
     'Raw rewrite counts and exact-version test coverage are available in structuredContent for debugging. Counts cover the whole wrapper process, possibly other threads. Unmatched text is not proof of a conflict in this conversation.',
@@ -86,7 +127,7 @@ export function proxyCheckResult(diagnostics) {
       ? `Run this shell check in the current Codex turn to verify create and delete access for every configured root. Report Sandbox write check as PASS only when every command succeeds, FAIL when a command fails, or UNKNOWN when you cannot run it. Do not substitute the proxy-process status. Then report exactly one Writable roots row per directory with exactly one status symbol at the start: use ✅ only when both the proxy-process and Codex-turn checks pass, ❌ when either check fails, or ❓ when the Codex-turn check is unavailable. Do not show separate symbols for the two checks. Render each full absolute directory path as a Markdown link using the path as both label and target. After the symbol, explain in plain text which check failed or is missing.\n\n${rootTest}`
       : 'Sandbox write check is not applicable because no writable roots are configured.',
     'There are exactly seven compatibility checks: (1) Review context and continuity, (2) PR waiting, (3) Browser routing, (4) Review-tool routing, (5) Fixer assignment, (6) Delegate waiting and recovery, and (7) Environment routing. Checks 1, 4, 5, and 6 use the reviewWorkflow override; check 2 uses prWaiting; check 3 uses browserRouting; check 7 uses environmentRouting. Give each PASS, FAIL, or UNKNOWN based on the developer guidance and tool descriptions actually present in your context. For Environment routing when enabled, PASS requires the received machine-routing context to contain the replacement guidance and omit both original unconditional-linking bullets; FAIL means the original bullets remain or the replacement is absent; UNKNOWN means no machine-routing context is visible. When disabled, PASS means the original T3 wording is preserved. Missing evidence is UNKNOWN. Do not infer received guidance from config, expected text, or rewrite counts alone. Process-wide unmatched text does not fail this conversation by itself; a visible conflicting instruction does.',
-    'For Delegate waiting and recovery when enabled, inspect the actual delegate and task_status guidance: PASS requires explicit workflow control of supported bounded waits, deadlines and recovery, including keeping the same task identity after timeout. Restrictive guidance that requires ending the turn or forbids all task_status checks while a delegate runs is FAIL when it overrides a workflow-owned wait. Missing evidence is UNKNOWN. A next suggestion in an unchanged tool result does not by itself fail the check when received developer guidance explicitly preserves workflow-owned waiting. When disabled, PASS means original T3 guidance is preserved, not that bounded workflow waits are supported. Do not claim that this proxy fixes delegation deadlines or guarantees timers, and preserve all tool-call results unchanged.',
+    'For Delegate waiting and recovery when enabled, inspect the actual developer guidance, delegate_task, task_status and t3_thread_wait descriptions, output schemas and any already-visible next results. PASS requires explicit workflow control of supported bounded waits, deadlines and recovery, including keeping the same task identity after timeout, with no remaining unconditional end-turn or no-wait instructions on these surfaces. Restrictive guidance that requires ending the turn or forbids all task_status checks while a delegate runs is FAIL even when developer guidance says workflow-owned waiting takes priority. An unconditional next instruction in an output schema or already-visible tool result is also FAIL; do not excuse it because a higher-priority override exists. A delegateWaitingEvidence status of fail requires this check and the overall result to FAIL. Treat its unknown status as a request for context inspection, not as a pass; missing evidence is UNKNOWN. When disabled, PASS means original T3 guidance is preserved, not that bounded workflow waits are supported. This checks instruction consistency, not demonstrated agent waiting or timeout recovery. Do not claim that this proxy fixes delegation deadlines or guarantees timers, and preserve all tool-call results unchanged.',
     'Keep the user-facing result brief and in plain language. Start with "✅ Proxy check passed." only when the installation works and all seven compatibility checks pass, "❌ Proxy check found a problem." for any failure, or "❓ Proxy check incomplete." for missing evidence. A known failed or unresolved Delegate waiting and recovery or Environment routing check must prevent an overall green result. Then give one installation sentence with the T3 version, compatibility qualification, and T3 connection status (connected, failed, or unknown). Do not give installation facts PASS labels or mix them into the compatibility list.',
     'Follow the installation sentence with the exact heading "Compatibility checks (7):" and exactly seven bullets, in this order and with these labels: "Review context and continuity", "PR waiting", "Browser routing", "Review-tool routing", "Fixer assignment", "Delegate waiting and recovery", and "Environment routing". Begin each bullet with its status icon: ✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN. Each bullet must show enabled or disabled, PASS/FAIL/UNKNOWN, and a short concrete reason. Keep the text labels alongside the icons; a disabled override does not mean FAIL. Explain enabled overrides as workflow control and disabled overrides as preserving T3 behavior. Do not show raw counters, fix-set identifiers, test-coverage flags, or a separate proxy-facts inventory unless asked. For a failure or missing evidence, say what needs checking next.',
   ].join('\n');

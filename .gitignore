@@ -5,3 +5,4 @@
 config.local.json
 node_modules/
 coverage/
+/temp/
