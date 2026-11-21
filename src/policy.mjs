@@ -1,12 +1,19 @@
 import { selectCompatibility } from './compatibility.mjs';
 import { resolveOverrides } from './config.mjs';
 
-// Version-selected, guarded substitutions. Never apply these to user prompts or tool results.
+// Version-selected, guarded substitutions. User prompts are never rewritten.
+export const WAITING_TOOL_NAMES = ['delegate_task', 'task_status', 't3_thread_wait'];
+export const RUNNING_TASK_NEXT_HINTS = [
+  'Completion wakes this thread, so end your turn. Do not wait on it or poll it.',
+  'Completion wakes this thread. End your turn unless you need this result now.',
+];
+export const THREAD_WAIT_END_TURN = 'On timeout, with `next` end your turn; without, call again.';
+export const WORKFLOW_WAITING_NEXT = 'Completion will notify this thread. Follow the workflow\'s bounded wait, deadline and recovery rules. When no workflow owns the wait, end this turn and await the notification.';
 export const REVIEW_GUIDANCE = "Let the user's review workflow choose available review tools, reviewer context, reviewer continuity, and who fixes findings. Use the workflow's selected native-agent or T3 tools. For a fresh independent review, supply the review brief and required source material; omit earlier findings, responses, and objections unless the workflow requests them. For a follow-up that needs the same reviewer conversation, continue that reviewer with the context requested by the workflow. When using T3 delegates, start fresh reviews with `delegate_task`, continue a reviewer with `t3_thread_send` on its `childThreadId`, and retain returned `taskId` values. Use a new `clientRequestId` for each T3 task or follow-up and keep it stable across retries.";
 
 export const REVIEW_FIXER_GUIDANCE = "Follow the workflow's assignment of review fixes, including small findings. When no workflow assigns a fixer, fix small review findings yourself.";
 
-export const DELEGATE_WAITING_GUIDANCE = "Let the user's workflow control delegate waits, deadlines, retries, recovery, and retained evidence. Use available bounded wait operations or workflow-paced task_status checks for the same taskId. A workflow-owned wait takes priority over a next suggestion to end the turn; keep tool results unchanged. A wait timeout does not cancel the child or prove completion: retain its identity, inspect its state, and follow the workflow's recovery or cancellation rules without launching a duplicate. When no workflow owns the wait, follow the delegate's next and use T3 completion notifications instead of polling.";
+export const DELEGATE_WAITING_GUIDANCE = "Let the user's workflow control delegate waits, deadlines, retries, recovery, and retained evidence. Use available bounded wait operations or workflow-paced task_status checks for the same taskId. A next hint never overrides workflow-owned waiting. Preserve task identity, status and timeout facts. A wait timeout does not cancel the child or prove completion: retain its identity, inspect its state, and follow the workflow's recovery or cancellation rules without launching a duplicate. When no workflow owns the wait, follow the delegate's next and use T3 completion notifications instead of polling.";
 
 const delegateWaitingContextRules = ["Do not", "Don't"].map(prohibition => [
   `Follow a running delegate's \`next\`. ${prohibition} poll it (\`task_status\`, \`sleep\`, watchers, Monitor, ScheduleWakeup).`,
@@ -40,6 +47,8 @@ const currentRules = {
     'Do not call it on a running task before its completion wakes you.',
     DELEGATE_WAITING_GUIDANCE,
   ]],
+  t3_thread_wait: [[THREAD_WAIT_END_TURN,
+    'On timeout, preserve task identity and follow the workflow\'s wait, deadline and recovery rules. When no workflow owns the wait, use `next` to decide whether to wait again or end this turn.']],
 };
 
 export const PR_WAITING_GUIDANCE = "Let the user's workflow choose how PR checks and reviews are awaited. Before choosing T3 watching, check the user's selected workflow and applicable skills for an integrated PR review/check mechanism. A standalone prerequisite PR does not automatically leave that workflow. Use its request, polling, evidence, retry, recovery, and completion gates when applicable. Preserve its polling helpers, completion conditions, deadlines, retry limits, recovery, and retained evidence. Do not replace a workflow-owned wait with watch_pull_request or end the turn while that workflow requires its helper to remain active. Use watch_pull_request as a fallback only after establishing that no workflow wait mechanism applies, then end the turn. T3 notifications are updates to inspect; they do not satisfy workflow gates or replace timeout recovery. Watching for a later owner merge must not bypass CI/review qualification.";
@@ -159,7 +168,8 @@ function rewriteGuidance(text, scope, rules, report, feature) {
   let result = text;
   for (const [before, after] of rules[scope] ?? []) result = result.replaceAll(before, after);
   if (result !== text) report('guidance_rewritten');
-  else if (feature !== 'reviewWorkflow' || /\breview|running delegate/i.test(text) || (scope === 'task_status' && rules[scope])) {
+  else if (feature !== 'reviewWorkflow' || /\breview|running delegate/i.test(text) ||
+      ((scope === 'task_status' || scope === 't3_thread_wait') && rules[scope])) {
     const replacements = (rules[scope] ?? []).map(([, after]) => after);
     const warning = { reviewWorkflow: 'unrecognized_review_guidance', prWaiting: 'unrecognized_pr_wait_guidance',
       browserRouting: 'unrecognized_browser_routing_guidance', environmentRouting: 'unrecognized_environment_routing_guidance' }[feature];
@@ -242,16 +252,52 @@ export function createPolicy(version, report = () => {}, overrides) {
     return value;
   };
   const rewriteTool = (name, text) => {
-    if (settings.reviewWorkflow && ['delegate_task', 't3_thread_send', 'task_status'].includes(name)) return apply(text, name, 'reviewWorkflow');
+    if (settings.reviewWorkflow && ['delegate_task', 't3_thread_send', 'task_status', 't3_thread_wait'].includes(name)) return apply(text, name, 'reviewWorkflow');
     if (settings.prWaiting && name === 'watch_pull_request') return apply(text, name, 'prWaiting');
     return text;
+  };
+  const shouldRewriteToolResult = name => Boolean(settings.reviewWorkflow && compatibility.fixSet === 'current' && WAITING_TOOL_NAMES.includes(name));
+  const rewriteWaitingData = (data, name) => {
+    if (!data || typeof data !== 'object' || typeof data.status !== 'string') return false;
+    const identified = name === 't3_thread_wait'
+      ? typeof data.threadId === 'string' && typeof data.timedOut === 'boolean'
+      : typeof data.taskId === 'string' && (typeof data.childThreadId === 'string' || data.childThreadId === null) && typeof data.waitTimedOut === 'boolean';
+    if (!identified || typeof data.next !== 'string') return false;
+    if (!RUNNING_TASK_NEXT_HINTS.includes(data.next)) {
+      if (data.next !== WORKFLOW_WAITING_NEXT) report('unrecognized_waiting_hint');
+      return false;
+    }
+    data.next = WORKFLOW_WAITING_NEXT;
+    report('waiting_hint_rewritten');
+    return true;
   };
   if (!compatibility.fixSet) report('unsupported_t3_version');
   else report(`t3_fixset_${compatibility.fixSet}`);
   return {
     ...compatibility,
     rewriteDeveloperContext: message => rewriteDeveloperContext(message, rewriteContext),
-    rewriteToolsList: message => rewriteToolsList(message, rewriteTool),
+    rewriteToolsList: message => {
+      rewriteToolsList(message, rewriteTool);
+      for (const tool of Array.isArray(message?.result?.tools) ? message.result.tools : []) {
+        if (!shouldRewriteToolResult(tool?.name)) continue;
+        const next = tool.outputSchema?.properties?.next;
+        if (next && RUNNING_TASK_NEXT_HINTS.includes(next.const)) next.const = WORKFLOW_WAITING_NEXT;
+        if (Array.isArray(next?.enum)) next.enum = next.enum.map(value => RUNNING_TASK_NEXT_HINTS.includes(value) ? WORKFLOW_WAITING_NEXT : value);
+      }
+      return message;
+    },
+    shouldRewriteToolResult,
+    rewriteToolResult: (message, name) => {
+      if (!shouldRewriteToolResult(name) || !message?.result || message.result.isError) return message;
+      rewriteWaitingData(message.result.structuredContent, name);
+      if (Array.isArray(message.result.content)) for (const part of message.result.content) {
+        if (part?.type !== 'text' || typeof part.text !== 'string') continue;
+        let data;
+        try { data = JSON.parse(part.text); } catch { continue; }
+        if (rewriteWaitingData(data, name)) part.text = JSON.stringify(data);
+      }
+      return message;
+    },
     diagnostics: () => ({
       t3Version: compatibility.fixSet ? version : null,
       ...compatibility,

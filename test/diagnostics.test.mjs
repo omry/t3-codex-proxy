@@ -38,7 +38,8 @@ async function setup(t, overrides, handler) {
     t3_code_orchestration_03: { kind: 'application', value: fixture.sections[2] },
     t3_code_tools: { kind: 'application', value: fixture.browserTools },
   } } });
-  const proxy = await startMcpProxy({ rewriteToolsList: policy.rewriteToolsList, diagnostics: policy.diagnostics });
+  const proxy = await startMcpProxy({ rewriteToolsList: policy.rewriteToolsList, diagnostics: policy.diagnostics,
+    shouldRewriteToolResult: policy.shouldRewriteToolResult, rewriteToolResult: policy.rewriteToolResult });
   const url = proxy.register(`http://127.0.0.1:${server.address().port}/mcp`);
   t.after(async () => { await proxy.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
   const request = (method, message, auth = 'Bearer test-secret') => fetch(url, { method, headers: {
@@ -120,7 +121,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
   });
 }
 
-test('proxy-check fails on remaining wait conflicts after workflow guidance is rewritten', async t => {
+test('proxy-check no longer detects the repaired waiting metadata and still requires context review', async t => {
   const { request } = await setup(t, undefined, (_req, res, message) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { tools: waitFixture.tools } }));
@@ -128,19 +129,30 @@ test('proxy-check fails on remaining wait conflicts after workflow guidance is r
   const response = await (await request('POST', { jsonrpc: '2.0', id: 19, method: 'tools/call',
     params: { name: 'proxy-check', arguments: {} } })).json();
   const evidence = response.result.structuredContent.delegateWaitingEvidence;
-  assert.equal(evidence?.status, 'fail');
-  assert.deepEqual(evidence.findings.map(({ tool, surface }) => [tool, surface]), [
-    ['delegate_task', 'outputSchema'], ['t3_thread_wait', 'description'],
-  ]);
+  assert.equal(evidence?.status, 'unknown');
+  assert.deepEqual(evidence.findings, []);
   assert.deepEqual(evidence.missingTools, []);
   const text = response.result.content[0].text;
-  assert.ok(text.includes('Delegate waiting and recovery: FAIL'));
-  assert.ok(text.includes('Completion wakes this thread, so end your turn. Do not wait on it or poll it.'));
-  assert.ok(text.includes('On timeout, with `next` end your turn; without, call again.'));
+  assert.ok(text.includes('Delegate waiting evidence: UNKNOWN'));
+  assert.ok(!text.includes('Completion wakes this thread, so end your turn. Do not wait on it or poll it.'));
+  assert.ok(!text.includes('On timeout, with `next` end your turn; without, call again.'));
   assert.ok(!text.includes('A next suggestion in an unchanged tool result does not by itself fail the check'));
   const listed = await (await request('POST', { jsonrpc: '2.0', id: 20, method: 'tools/list' })).json();
-  assert.equal(listed.result.tools[0].outputSchema.properties.next.const, waitFixture.tools[0].outputSchema.properties.next.const);
-  assert.equal(listed.result.tools[2].description, waitFixture.tools[2].description);
+  assert.notEqual(listed.result.tools[0].outputSchema.properties.next.const, waitFixture.tools[0].outputSchema.properties.next.const);
+  assert.notEqual(listed.result.tools[2].description, waitFixture.tools[2].description);
+});
+
+test('proxy-check still fails when a conflicting schema is outside the supported rewrite shape', async t => {
+  const tools = structuredClone(waitFixture.tools);
+  tools[0].outputSchema = { allOf: [tools[0].outputSchema] };
+  const { request } = await setup(t, undefined, (_req, res, message) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { tools } }));
+  });
+  const response = await (await request('POST', { jsonrpc: '2.0', id: 22, method: 'tools/call',
+    params: { name: 'proxy-check', arguments: {} } })).json();
+  assert.equal(response.result.structuredContent.delegateWaitingEvidence.status, 'fail');
+  assert.ok(response.result.content[0].text.includes('Delegate waiting and recovery: FAIL'));
 });
 
 test('proxy-check detects each unchanged wait surface independently', () => {
@@ -183,7 +195,7 @@ test('missing, partial and conflict-free waiting metadata never imply a diagnost
   }
 });
 
-test('delegate status responses preserve timeout, cancellation and next fields verbatim', async t => {
+test('unrecognized delegate result shapes preserve timeout, cancellation and next fields verbatim', async t => {
   const result = { content: [{ type: 'text', text: 'running delegate result' }], structuredContent: {
     taskId: 'same-task', status: 'running', waitTimedOut: true, workState: 'working',
     next: 'Completion wakes this thread, so end your turn. Do not wait on it or poll it.',

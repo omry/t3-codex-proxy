@@ -28,6 +28,31 @@ test('Windows command shims use the shell while native executables stay direct',
   }
 });
 
+test('both T3 MCP servers are proxied while direct-tool selection and other settings are preserved', () => {
+  for (const method of ['thread/start', 'thread/resume', 'thread/fork']) for (const nested of [false, true]) for (const directOnly of [false, true]) {
+    const servers = {
+      't3-code': { url: 'http://127.0.0.1:1234/mcp', http_headers: { Authorization: 'fake' },
+        tool_timeout_sec: 3900, disabled_tools: ['t3_thread_wait', 'delegate_task'] },
+      't3-code-direct': { url: 'http://127.0.0.1:1234/mcp', http_headers: { Authorization: 'fake' },
+        tool_timeout_sec: 3900, enabled_tools: ['t3_thread_wait', 'delegate_task'], omit_tools_from: ['code_mode', 'deferred'] },
+      other: { url: 'http://127.0.0.1:9876/unrelated' },
+    };
+    if (directOnly) delete servers['t3-code'];
+    const config = nested ? { mcp_servers: structuredClone(servers) }
+      : Object.fromEntries(Object.entries(servers).map(([name, server]) => [`mcp_servers.${name}`, structuredClone(server)]));
+    const message = { method, params: { config } };
+    const before = structuredClone(message);
+    const calls = [];
+    rewriteClientMessage(message, { register: url => { calls.push(url); return 'http://127.0.0.1:5678/proxied'; } });
+    for (const name of ['t3-code', 't3-code-direct']) {
+      const server = nested ? before.params.config.mcp_servers[name] : before.params.config[`mcp_servers.${name}`];
+      if (server) server.url = 'http://127.0.0.1:5678/proxied';
+    }
+    assert.deepEqual(message, before);
+    assert.equal(calls.length, directOnly ? 1 : 2);
+  }
+});
+
 test('exact diagnostic requests gain tool-discovery context without changing user input', () => {
   for (const text of ['proxy-check', 'proxy_check', '  proxy-check\n']) {
     const message = { method: 'turn/start', params: {
@@ -342,6 +367,9 @@ test('invalid transport and missing executable exit cleanly without disclosing p
   const transport = launch(t, ['app-server', '--listen', 'ws://private-marker:9999']);
   assert.equal((await transport.exit).code, 1);
   assert.equal(transport.stderr(), 't3-codex-proxy: startup_or_protocol_failed\n');
+  const directOverride = launch(t, ['app-server', '--config', 'mcp_servers."t3-code-direct".url="http://private-marker"']);
+  assert.equal((await directOverride.exit).code, 1);
+  assert.equal(directOverride.stderr(), 't3-codex-proxy: startup_or_protocol_failed\n');
   const missing = launch(t, ['app-server'], '/tmp/nonexistent-codex-private-marker');
   missing.child.stdin.end();
   assert.equal((await missing.exit).code, 1);

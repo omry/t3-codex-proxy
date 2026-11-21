@@ -60,11 +60,14 @@ export function rewriteClientMessage(message, proxy, report, policy, additionalW
   if (!['thread/start', 'thread/resume', 'thread/fork'].includes(message?.method)) return message;
   const config = message.params?.config;
   if (!config || typeof config !== 'object') return message;
-  // T3 uses a flat dotted key; also accept Codex's nested config representation.
-  const server = config['mcp_servers.t3-code'] ?? config.mcp_servers?.['t3-code'];
-  if (!server) return message;
-  if (typeof server.url !== 'string') throw new Error('unsupported_t3_mcp_config');
-  server.url = proxy.register(server.url);
+  // T3 splits foreground tools into its direct server. Route both aliases
+  // through the same proxy, retaining all tool-selection and transport settings.
+  for (const name of ['t3-code', 't3-code-direct']) {
+    const server = config[`mcp_servers.${name}`] ?? config.mcp_servers?.[name];
+    if (!server) continue;
+    if (typeof server.url !== 'string') throw new Error('unsupported_t3_mcp_config');
+    server.url = proxy.register(server.url);
+  }
   return message;
 }
 
@@ -77,7 +80,7 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     for (let i = 1; i < args.length; i++) {
       if (args[i].startsWith('--listen=') && args[i] !== '--listen=stdio://') throw new Error('stdio_required');
       if (args[i] === '--listen' && args[i + 1] !== 'stdio://') throw new Error('stdio_required');
-      if (args[i].includes('mcp_servers.t3-code') || args[i].includes('mcp_servers."t3-code"')) throw new Error('launch_mcp_override_unsupported');
+      if (args[i].includes('mcp_servers.t3-code') || args[i].includes('mcp_servers."t3-code"') || args[i].includes('mcp_servers."t3-code-direct"')) throw new Error('launch_mcp_override_unsupported');
     }
   }
   let proxy;
@@ -144,7 +147,9 @@ export async function runWrapper({ realCodex, args, input = process.stdin, outpu
     if (!passThrough && configFile) stopConfigWatch = watchConfig(configFile, { onChange: applyConfig, report });
     if (!passThrough) proxy = await startMcpProxy({ report,
       diagnostics: () => ({ ...currentPolicy().diagnostics(), writableRoots: inspectWritableRoots(liveAdditionalWritableRoots) }),
-      rewriteToolsList: message => currentPolicy().rewriteToolsList(message) });
+      rewriteToolsList: message => currentPolicy().rewriteToolsList(message),
+      shouldRewriteToolResult: name => currentPolicy().shouldRewriteToolResult(name),
+      rewriteToolResult: (message, name) => currentPolicy().rewriteToolResult(message, name) });
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
     await assertNotRecursive(realCodex);
     if (signalled) return 128 + (osConstants.signals[signalled] ?? 1);
