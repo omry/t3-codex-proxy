@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { SseRewrite } from '../src/framing.mjs';
 import { startMcpProxy } from '../src/mcp-proxy.mjs';
-import { createPolicy } from '../src/policy.mjs';
+import { createPolicy, WORKFLOW_WAITING_NEXT } from '../src/policy.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-wait-conflicts.json', import.meta.url)));
 const originalNext = fixture.tools[0].outputSchema.properties.next.const;
@@ -71,6 +71,18 @@ test('waiting tool metadata removes the observed conflicts without changing inpu
   for (let i = 0; i < fixture.tools.length; i++) {
     assert.deepEqual(message.result.tools[i].inputSchema, fixture.tools[i].inputSchema);
   }
+});
+
+test('current T3 running-task hint is normalized', () => {
+  const policy = createPolicy('0.1.12-nightly.20261121.5024');
+  const data = {
+    taskId: 'task-current', childThreadId: 'child-current', status: 'running', waitTimedOut: false,
+    next: 'Completion wakes this thread. Do not wait on it or poll it. Continue other work, and end your turn when none is left.',
+  };
+  const message = { result: { structuredContent: structuredClone(data), content: [{ type: 'text', text: JSON.stringify(data) }] } };
+  policy.rewriteToolResult(message, 'task_status');
+  assert.equal(message.result.structuredContent.next, WORKFLOW_WAITING_NEXT);
+  assert.equal(JSON.parse(message.result.content[0].text).next, WORKFLOW_WAITING_NEXT);
 });
 
 for (const transport of ['json', 'sse', 'get']) {
