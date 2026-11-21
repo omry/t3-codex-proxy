@@ -294,6 +294,12 @@ The diagnostic does not create delegates,
 watches, schedules, or messages. T3 has no knowledge of this diagnostic tool,
 and existing T3 watch notifications remain unchanged.
 
+`proxy-check` reports newer or changed T3 guidance as an informational drift
+notice when the installed version is outside the proxy's exact fixtures or a
+known guidance surface has changed. Drift does not by itself change a
+compatibility check from PASS to FAIL; inspect the received guidance and tool
+metadata before treating it as a problem.
+
 ## Existing conversations
 
 After restarting the backend, existing Codex conversations using the configured
