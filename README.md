@@ -24,10 +24,12 @@ also need access to directories outside the normal project root.
 - Rewrites only known, version-specific T3 guidance and tool descriptions so
   the user's workflow controls review routing, continuity, fixer assignment,
   delegate waits, PR waits, and browser versus API/CLI/connector selection.
-- Preserves user input, tool results, schemas, unrelated guidance, and unknown
-  wording. Unknown wording is reported instead of being broadly removed.
-- Routes T3's local MCP connection through a loopback proxy and adds the
-  read-only `proxy-check` diagnostic.
+- Normalizes the known `next` waiting hint in identified waiting-tool replies
+  and matching output-schema literals. Preserves task identity, status, timeout
+  facts, input schemas, user input, and unrelated result data. Unknown guidance
+  stays unchanged and is reported instead of being broadly removed.
+- Routes T3's regular and direct MCP connections through a loopback proxy and
+  adds the read-only `proxy-check` diagnostic.
 - Adds configured writable roots to `workspaceWrite` turns and reports each
   directory's proxy-process and Codex-turn write status.
 - Reloads valid override and writable-root edits for later turns. It does not

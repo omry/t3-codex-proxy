@@ -30,14 +30,15 @@ async function readBounded(stream) {
   return Buffer.concat(chunks);
 }
 
-export async function startMcpProxy({ report = () => {}, rewriteToolsList = message => message, diagnostics } = {}) {
+export async function startMcpProxy({ report = () => {}, rewriteToolsList = message => message,
+  shouldRewriteToolResult = () => false, rewriteToolResult = message => message, diagnostics } = {}) {
   const routes = new Map();
   const byUpstream = new Map();
   const upstreamRequests = new Set();
   const sockets = new Set();
-  // Retain tools/list response IDs for GET delivery and reconnect replay. A
+  // Retain inspected response IDs for GET delivery and reconnect replay. A
   // successful delivery does not prove the client received the complete event.
-  const listRequests = new Map();
+  const responseKinds = new Map();
   const sessionKey = (route, auth, session) => JSON.stringify([route, auth ?? null, session ?? null]);
   const listKey = (session, id) => JSON.stringify([session, id]);
 
@@ -47,6 +48,10 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
     if (!['POST', 'GET', 'DELETE'].includes(request.method)) return endError(response, 405, 'unsupported_method');
     let upstream;
     let requestKey;
+    let requestKind;
+    let sse;
+    let terminalResponseSeen = false;
+    let replayableTerminalResponse = false;
     const session = sessionKey(request.url, request.headers.authorization, request.headers['mcp-session-id']);
     const abort = () => upstream?.destroy();
     response.on('close', abort);
@@ -66,13 +71,15 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
       if (request.method === 'POST' && typeof parsed?.method === 'string' &&
           (typeof parsed.id === 'string' || typeof parsed.id === 'number')) {
         const key = listKey(session, parsed.id);
-        if (parsed.method === 'tools/list' || localCheck) {
-          if (!listRequests.has(key) && listRequests.size >= 4096) return endError(response, 503, 'too_many_list_ids');
+        if (parsed.method === 'tools/list' || localCheck) requestKind = localCheck ? 'check' : 'list';
+        else if (parsed.method === 'tools/call' && shouldRewriteToolResult(parsed.params?.name)) requestKind = { tool: parsed.params.name };
+        if (requestKind !== undefined) {
+          if (!responseKinds.has(key) && responseKinds.size >= 4096) return endError(response, 503, 'too_many_list_ids');
           requestKey = key;
-          listRequests.set(key, localCheck ? 'check' : 'list');
+          responseKinds.set(key, requestKind);
         } else {
           // Do not classify a later tool result as metadata if its ID is reused.
-          listRequests.delete(key);
+          responseKinds.delete(key);
         }
       }
       if (localCheck) {
@@ -86,8 +93,13 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
         // connection reused its ID. Only GET streams need the shared registry.
         if (request.method === 'POST') {
           if (requestKey === undefined || message.id !== parsed.id) return message;
-        } else if (!listRequests.has(key)) return message;
-        const kind = request.method === 'POST' ? (localCheck ? 'check' : 'list') : listRequests.get(key);
+          if (requestKind?.tool && (Object.hasOwn(message, 'result') || Object.hasOwn(message, 'error'))) {
+            terminalResponseSeen = true;
+            if (sse?.hasReplayCursor) replayableTerminalResponse = true;
+          }
+        } else if (!responseKinds.has(key)) return message;
+        const kind = request.method === 'POST' ? requestKind : responseKinds.get(key);
+        if (kind?.tool) return rewriteToolResult(message, kind.tool);
         if (diagnostics && Array.isArray(message.result?.tools)) {
           if (message.result.tools.some(tool => tool?.name === PROXY_CHECK_TOOL.name)) {
             report('proxy_check_name_conflict');
@@ -141,6 +153,10 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
         }
         response.writeHead(incoming.statusCode, outputHeaders);
         response.end(updated);
+        // Ordinary JSON replies have no SSE replay cursor. Keep pending and
+        // replayable calls, and never remove a newer request using the same ID.
+        if (request.method === 'POST' && requestKind?.tool && incoming.statusCode !== 202 &&
+            responseKinds.get(requestKey) === requestKind) responseKinds.delete(requestKey);
       } else if (inspect && contentType === 'text/event-stream') {
         delete outputHeaders['content-length'];
         delete outputHeaders.etag;
@@ -148,14 +164,18 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
         delete outputHeaders.digest;
         response.writeHead(incoming.statusCode, outputHeaders);
         response.flushHeaders();
-        await pipeline(incoming, new SseRewrite(rewrite), response);
+        sse = new SseRewrite(rewrite);
+        await pipeline(incoming, sse, response);
+        if (request.method === 'POST' && requestKind?.tool && incoming.statusCode !== 202 && terminalResponseSeen &&
+            !replayableTerminalResponse &&
+            responseKinds.get(requestKey) === requestKind) responseKinds.delete(requestKey);
       } else {
         if (requestKey && incoming.statusCode < 400 && incoming.statusCode !== 202) report('unrecognized_metadata_transport');
         response.writeHead(incoming.statusCode, outputHeaders);
         await pipeline(incoming, response);
       }
       if (request.method === 'DELETE' && incoming.statusCode < 300) {
-        for (const key of listRequests.keys()) if (JSON.parse(key)[0] === session) listRequests.delete(key);
+        for (const key of responseKinds.keys()) if (JSON.parse(key)[0] === session) responseKinds.delete(key);
       }
     } catch (error) {
       upstream?.destroy();
@@ -194,7 +214,7 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
       for (const request of upstreamRequests) request.destroy();
       for (const socket of sockets) socket.destroy();
       await new Promise(resolve => server.close(resolve));
-      listRequests.clear();
+      responseKinds.clear();
     },
   };
 }

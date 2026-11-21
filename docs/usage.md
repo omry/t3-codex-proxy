@@ -138,8 +138,16 @@ waits can use supported bounded operations or paced status checks with their
 own deadline and recovery. A wait timeout does not cancel the child or prove
 completion: keep its task identity and follow the workflow's recovery rules.
 Without a workflow-owned wait, follow T3's `next` and completion notifications.
-Cancellation instructions, schemas and tool results remain unchanged. This
-changes guidance; it does not add a timer or a scheduler to T3.
+The switch also replaces the known `t3_thread_wait` timeout instruction and
+normalizes the two observed `next` waiting hints in identified `delegate_task`,
+`task_status`, and `t3_thread_wait` results. JSON-text and structured replies
+receive the same hint. Task IDs, status, timeout facts, summaries, cancellation
+instructions, input schemas and unrelated data stay unchanged. Matching direct
+`next` output-schema literals are updated to agree with the normalized reply.
+Unknown hints, unrecognized result shapes, errors and unrelated tools remain
+unchanged. Disabled overrides and unsupported versions preserve the original
+reply. This changes delivered waiting guidance; it does not add a timer or a
+scheduler to T3.
 The PR-wait fix rewrites the known runtime PR block and watch-tool description,
 retaining linking rules and unrelated runtime information. Before choosing T3
 watching, check the selected workflow and applicable skills for an integrated
@@ -183,11 +191,13 @@ fixture covers this section only; the release retains assumed compatibility
 through the nightly range.
 
 T3 tool results can still suggest ending the turn and awaiting a completion
-notification. The enabled `reviewWorkflow` replacement explicitly keeps a
-workflow-owned wait in control without rewriting those results. The workflow
-must use an agent path with supported wait and recovery operations; the proxy
-does not implement them or guarantee wall-clock deadlines. The `prWaiting`
-switch applies to PR waits and does not control delegate waits.
+notification. With `reviewWorkflow` enabled on a version using the current
+waiting-result fix set, the proxy normalizes the two recognized waiting `next`
+hints in identified waiting replies while preserving their task facts and
+unknown hints, as described above. The workflow must use an agent path with
+supported wait and recovery operations. The proxy does not implement those
+operations or guarantee wall-clock deadlines. The `prWaiting` switch applies
+to PR waits and does not control delegate waits.
 
 ## Overrides and diagnostics
 
@@ -229,9 +239,15 @@ when either check fails; or `❓` when the turn check is unavailable. The text
 after the symbol names the failed or missing check. The proxy-side status alone
 does not prove access from the Codex turn sandbox and does not create marker
 files. Each row renders the full absolute directory path as a Markdown link.
-It handles that tool locally, using an upstream `tools/list` request with the
+Both `t3-code` and `t3-code-direct` use the same proxy policy. The wrapper keeps
+their enabled/disabled tool lists, direct-exposure settings, authentication and
+timeouts intact. A rewritten regular discovery list alone does not prove that
+the model-visible direct tools were rewritten; verify those descriptions too.
+It handles the diagnostic locally, using an upstream `tools/list` request with the
 caller's route, authentication, and session to verify access. Authentication
-failures pass through. Other tool calls and their results remain opaque.
+failures pass through. Only identified waiting-tool replies with a recognized
+`next` hint receive the bounded guidance change described above. Other results
+remain opaque.
 The check returns plain-language configuration and compatibility facts,
 and a configuration-specific checklist for the agent's next inference. Raw
 process-wide rewrite counts and exact-version test coverage remain in
@@ -272,7 +288,7 @@ supported bounded waits, deadlines and recovery, including retaining task
 identity after a timeout, with no remaining unconditional waiting restrictions.
 When disabled, PASS verifies original T3 guidance, not bounded-wait support.
 The proxy does not implement delegate deadlines or guarantee timers, and it
-preserves tool-call results unchanged. This diagnostic checks instruction
+preserves result facts while normalizing recognized waiting hints. This diagnostic checks instruction
 consistency; it does not demonstrate agent waiting or timeout recovery.
 The diagnostic does not create delegates,
 watches, schedules, or messages. T3 has no knowledge of this diagnostic tool,
@@ -344,10 +360,15 @@ Likewise, installation does not erase original instructions in an old history.
   HTTP connection headers are normalized for proxying. It requests identity
   encoding; compressed metadata responses are rejected. JSON request bodies,
   buffered metadata responses, and individual stream frames are limited to
-  16 MiB. At most 4,096 discovery/diagnostic request IDs are retained per wrapper for replay;
-  session deletion or reuse of an ID for another method clears its entry.
-  Further new list IDs receive HTTP 503 at the limit; restart the wrapper if
-  the upstream does not delete sessions. Entries are not silently evicted.
+  16 MiB. At most 4,096 discovery, diagnostic, and recognized waiting-call IDs
+  are retained per wrapper. Pending replies and replayable SSE/GET results keep
+  their correlation. Completed waiting-call JSON replies release their matching
+  entry; a terminal SSE waiting reply releases it only after a matching result
+  or error is parsed and no matching terminal event had a replay cursor. Session
+  deletion or reuse of an ID for another method clears its entry. New
+  discovery, diagnostic, or recognized waiting calls can receive HTTP 503 at
+  the limit; restart the wrapper if the upstream does not delete sessions.
+  Entries are not silently evicted.
 - Tool-call response streams pass through without buffering the whole response.
   Metadata SSE is buffered one event at a time. Changed frames are reserialized;
   unrelated frames retain their bytes. No proxy tool-execution deadline is added.

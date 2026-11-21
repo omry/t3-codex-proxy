@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, WORKFLOW_WAITING_NEXT } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
 
@@ -22,6 +22,9 @@ await mkdir(home); await mkdir(workspace);
 const fixture = JSON.parse(await readFile(process.argv[3] ? path.resolve(process.argv[3]) :
   new URL('../test/fixtures/t3-guidance.json', import.meta.url), 'utf8'));
 const delegateWaitFixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-delegate-wait-guidance-4580.json', import.meta.url), 'utf8'));
+const waitingFixture = JSON.parse(await readFile(new URL('../test/fixtures/t3-wait-conflicts.json', import.meta.url), 'utf8'));
+const originalNext = waitingFixture.tools[0].outputSchema.properties.next.const;
+const fakeTask = { taskId: 'isolated-task', childThreadId: null, status: 'starting', waitTimedOut: true, next: originalNext };
 const t3Version = process.argv[4] ?? fixture.sourceVersion.replace(/^v/, '');
 const sections = fixture.sections ?? [fixture.context];
 const environmentBullets = sections.flatMap(section => section.split('\n'))
@@ -34,6 +37,10 @@ const methods = [];
 const modelRequests = [];
 let requestDiagnostic = false;
 let diagnosticCalled = false;
+let requestWaitingHint = false;
+let waitingHintCalled = false;
+let requestDirectWait = false;
+let directWaitCalled = false;
 const server = http.createServer(async (request, response) => {
   if (request.url.startsWith('/responses')) {
     const parts = [];
@@ -48,6 +55,16 @@ const server = http.createServer(async (request, response) => {
         namespace: 'functions', name: 'exec', status: 'completed',
         input: 'const tool = ALL_TOOLS.find(tool => /proxy[-_]check$/.test(tool.name)); if (!tool) throw new Error("missing proxy diagnostic"); text(await tools[tool.name]({}));' };
       diagnosticCalled = true;
+    } else if (requestWaitingHint && !waitingHintCalled) {
+      item = { id: 'fc_waiting_hint', type: 'custom_tool_call', call_id: 'waiting_hint_smoke',
+        namespace: 'functions', name: 'exec', status: 'completed',
+        input: 'const tool = ALL_TOOLS.find(tool => /task_status$/.test(tool.name)); if (!tool) throw new Error("missing fake status tool"); text(await tools[tool.name]({ taskId: "isolated-task" }));' };
+      waitingHintCalled = true;
+    } else if (requestDirectWait && !directWaitCalled) {
+      item = { id: 'fc_direct_wait', type: 'function_call', call_id: 'direct_wait_smoke',
+        namespace: 'mcp__t3_code_direct', name: 't3_thread_wait',
+        arguments: JSON.stringify({ threadId: 'isolated-child', timeoutMs: 1 }) };
+      directWaitCalled = true;
     }
     const event = (type, fields) => response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`);
     event('response.created', { response: { id: 'resp_fake', object: 'response', status: 'in_progress', output: [] } });
@@ -72,8 +89,18 @@ const server = http.createServer(async (request, response) => {
     { name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object', properties: {} } },
     { name: 't3_thread_send', description: fixture.t3_thread_send, inputSchema: { type: 'object', properties: {} } },
     { name: 'watch_pull_request', description: fixture.watch_pull_request, inputSchema: { type: 'object', properties: {} } },
-    { name: 'task_status', description: delegateWaitFixture.task_status, inputSchema: { type: 'object', properties: {} } },
+    { name: 'task_status', description: delegateWaitFixture.task_status,
+      inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'] },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+    { ...waitingFixture.tools[2], annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   ] });
+  if (message.method === 'tools/call' && message.params?.name === 'task_status') {
+    return reply({ content: [{ type: 'text', text: JSON.stringify(fakeTask) }], structuredContent: fakeTask });
+  }
+  if (message.method === 'tools/call' && message.params?.name === 't3_thread_wait') {
+    const data = { threadId: 'isolated-child', runId: 'isolated-run', status: 'running', timedOut: true, next: originalNext };
+    return reply({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data });
+  }
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Not implemented in isolated fixture' } }));
 });
@@ -127,18 +154,26 @@ requires_openai_auth = false
   });
   const initialized = await call('initialize', { clientInfo: { name: 'T3 Code', version: t3Version }, capabilities: { experimentalApi: true } });
   child.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n');
-  const config = { 'mcp_servers.t3-code': {
+  const sharedMcp = {
     url: `http://127.0.0.1:${server.address().port}/mcp`,
     http_headers: { Authorization: 'Bearer isolated-fake-token' }, startup_timeout_sec: 10,
-  }, mcp_optional_startup_grace_ms: 10000 };
+  };
+  const directOnly = ['t3_thread_wait', 'delegate_task'];
+  const config = {
+    'mcp_servers.t3-code': { ...sharedMcp, disabled_tools: directOnly },
+    'mcp_servers.t3-code-direct': { ...sharedMcp, enabled_tools: directOnly, omit_tools_from: ['code_mode', 'deferred'] },
+    mcp_optional_startup_grace_ms: 10000,
+  };
   const thread = await call('thread/start', { cwd: workspace, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only',
     modelProvider: 'isolated', model: 'gpt-6.1-sol', config });
   assert.ok(thread.thread.id);
   const status = await call('mcpServerStatus/list', { threadId: thread.thread.id });
   const t3 = status.data.find(item => item.name === 't3-code');
+  const direct = status.data.find(item => item.name === 't3-code-direct');
   assert.ok(t3, 'Fake t3-code server is visible to real Codex');
+  assert.ok(direct, 'The installed T3 direct-server layout is visible to real Codex');
   for (const name of ['delegate_task', 't3_thread_send']) {
-    const tool = t3.tools[name];
+    const tool = name === 'delegate_task' ? direct.tools[name] : t3.tools[name];
     assert.ok(tool, `${name} loaded by real Codex`);
     if (fixture.toolDescriptionsUnchanged || !overrides.reviewWorkflow) {
       assert.equal(tool.description, fixture[name], `${name}: neutral latest description preserved`);
@@ -157,10 +192,11 @@ requires_openai_auth = false
   const expectWorkflowWait = Boolean(fixture.originalReviewText) && overrides.reviewWorkflow;
   assert.equal(t3.tools.task_status.description.includes(DELEGATE_WAITING_GUIDANCE), expectWorkflowWait);
   if (!expectWorkflowWait) assert.equal(t3.tools.task_status.description, delegateWaitFixture.task_status);
+  assert.equal(direct.tools.t3_thread_wait.description.includes('with `next` end your turn'), !expectWorkflowWait);
   assert.equal(t3.tools.watch_pull_request.description !== fixture.watch_pull_request, overrides.prWaiting);
   const runTurn = async additionalContext => {
     const result = await call('turn/start', { threadId: thread.thread.id,
-      input: [{ type: 'text', text: requestDiagnostic ? 'proxy-check' : 'Reply with a short confirmation. Do not use tools.' }],
+      input: [{ type: 'text', text: requestDirectWait ? 'Wait on the isolated fake child.' : requestWaitingHint ? 'Read the isolated fake task status.' : requestDiagnostic ? 'proxy-check' : 'Reply with a short confirmation. Do not use tools.' }],
       ...(additionalContext ? { additionalContext } : {}),
     });
     const deadline = Date.now() + 20000;
@@ -175,6 +211,9 @@ requires_openai_auth = false
   context.t3_code_runtime = { kind: 'application', value: fixture.pullRequestInstructions };
   context.t3_code_tools = { kind: 'application', value: fixture.browserTools };
   await runTurn(context);
+  const directNamespace = modelRequests[0].input.flatMap(item => item.tools ?? []).find(tool => tool.name === 'mcp__t3_code_direct');
+  assert.ok(directNamespace, 'Direct T3 tools are exposed directly to the model');
+  assert.equal(JSON.stringify(directNamespace).includes('with `next` end your turn'), !expectWorkflowWait);
   const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
   assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
   const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
@@ -234,6 +273,22 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
   assert.ok(!methods.includes('tools/call'));
+  requestWaitingHint = true;
+  await runTurn();
+  const hintOutput = modelRequests.at(-1).input.find(item => item.type === 'custom_tool_call_output' && item.call_id === 'waiting_hint_smoke');
+  assert.ok(hintOutput, 'Waiting-tool reply reaches the next real-Codex inference');
+  const hintText = JSON.stringify(hintOutput.output);
+  assert.equal(hintText.includes(WORKFLOW_WAITING_NEXT), expectWorkflowWait, hintText);
+  assert.equal(hintText.includes(originalNext), !expectWorkflowWait, hintText);
+  assert.ok(hintText.includes('isolated-task') && hintText.includes('waitTimedOut'));
+  requestDirectWait = true;
+  await runTurn();
+  const directOutput = modelRequests.at(-1).input.find(item => item.type === 'function_call_output' && item.call_id === 'direct_wait_smoke');
+  assert.ok(directOutput, 'Direct waiting-tool reply reaches the next real-Codex inference');
+  const directText = JSON.stringify(directOutput.output);
+  assert.equal(directText.includes(WORKFLOW_WAITING_NEXT), expectWorkflowWait, directText);
+  assert.equal(directText.includes(originalNext), !expectWorkflowWait, directText);
+  assert.ok(directText.includes('isolated-child') && directText.includes('timedOut'));
   console.log(JSON.stringify({ result: 'passed', t3Version, overrides, codex: initialized.userAgent, checks: [
     'isolated real Codex thread starts through wrapper', 'fake MCP authenticates through local proxy',
     'configured tool-description rewrites match explicit settings',
@@ -243,6 +298,8 @@ requires_openai_auth = false
     'rewritten developer reinjection reaches fake model on next turn',
     'bare proxy-check request receives turn-specific tool-discovery context',
     'agent calls local proxy-check and its diagnostic checklist reaches the next inference',
+    'known waiting hint is normalized only when enabled and reaches the next inference with task facts intact',
+    'direct MCP tool description and timeout reply reach inference through the same configured rewrite',
     'all model responses are local fixtures; no live T3 tool called',
   ] }, null, 2));
 } finally {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createPolicy, DELEGATE_WAITING_GUIDANCE } from '../src/policy.mjs';
+import { createPolicy, DELEGATE_WAITING_GUIDANCE, THREAD_WAIT_END_TURN, WORKFLOW_WAITING_NEXT } from '../src/policy.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-delegate-wait-guidance-4580.json', import.meta.url)));
 
@@ -33,7 +33,7 @@ for (const reviewWorkflow of [false, true]) {
     assert.equal(tool.description.includes('Do not call it on a running task before its completion wakes you.'), !reviewWorkflow);
     assert.ok(tool.description.endsWith('Reading it marks it delivered.'));
     assert.deepEqual(tool.inputSchema, original.result.tools[0].inputSchema);
-    assert.deepEqual(tool.outputSchema, original.result.tools[0].outputSchema);
+    assert.equal(tool.outputSchema.properties.next.const, reviewWorkflow ? WORKFLOW_WAITING_NEXT : original.result.tools[0].outputSchema.properties.next.const);
     if (!reviewWorkflow) assert.deepEqual(tools, original);
     const toolsOnce = structuredClone(tools); policy.rewriteToolsList(tools); assert.deepEqual(tools, toolsOnce);
 
@@ -59,4 +59,52 @@ test('unrecognized delegate-wait wording is preserved and reported without discl
   assert.deepEqual({ message, tools }, before);
   assert.equal(events.filter(event => event === 'unrecognized_review_guidance').length, 2);
   assert.ok(!events.join(' ').includes('private'));
+});
+
+test('unrecognized t3_thread_wait wording is preserved and reported once', () => {
+  const events = [];
+  const policy = createPolicy('0.1.10-nightly.20261112.4580', event => events.push(event));
+  const description = 'Wait for a thread. On timeout, always end this turn.';
+  const tools = { result: { tools: [{ name: 't3_thread_wait', description }] } };
+  const before = structuredClone(tools);
+
+  policy.rewriteToolsList(tools);
+
+  assert.deepEqual(tools, before);
+  assert.equal(events.filter(event => event === 'unrecognized_review_guidance').length, 1);
+  assert.ok(!events.join(' ').includes(description));
+});
+
+test('known and already-rewritten t3_thread_wait wording does not warn', () => {
+  const events = [];
+  const policy = createPolicy('0.1.10-nightly.20261112.4580', event => events.push(event));
+  const tools = { result: { tools: [{ name: 't3_thread_wait', description: THREAD_WAIT_END_TURN }] } };
+
+  policy.rewriteToolsList(tools);
+  assert.match(tools.result.tools[0].description, /preserve task identity and follow the workflow's wait, deadline and recovery rules/);
+  const afterRewrite = structuredClone(tools);
+  policy.rewriteToolsList(tools);
+
+  assert.deepEqual(tools, afterRewrite);
+  assert.equal(events.filter(event => event === 'unrecognized_review_guidance').length, 0);
+});
+
+test('disabled and unsupported policies do not report unknown t3_thread_wait wording', () => {
+  const description = 'Wait for a thread. On timeout, always end this turn.';
+  for (const [version, overrides, initialEvent] of [
+    ['0.1.10-nightly.20261112.4580', { reviewWorkflow: false }, 't3_fixset_current'],
+    ['0.0.0', undefined, 'unsupported_t3_version'],
+  ]) {
+    const events = [];
+    const policy = createPolicy(version, event => events.push(event), overrides);
+    assert.ok(events.includes(initialEvent));
+    events.length = 0;
+    const tools = { result: { tools: [{ name: 't3_thread_wait', description }] } };
+    const before = structuredClone(tools);
+
+    policy.rewriteToolsList(tools);
+
+    assert.deepEqual(tools, before);
+    assert.equal(events.filter(event => event === 'unrecognized_review_guidance').length, 0);
+  }
 });

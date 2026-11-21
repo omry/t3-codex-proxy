@@ -55,6 +55,8 @@ export class SseRewrite extends Transform {
     this.atStreamStart = true;
     this.skipLf = false;
     this.afterEventCr = false;
+    this.lastEventId = '';
+    this.hasReplayCursor = false;
   }
   event(bytes) {
     const hasLeadingBom = this.atStreamStart && bytes.subarray(0, UTF8_BOM.length).equals(UTF8_BOM);
@@ -67,9 +69,16 @@ export class SseRewrite extends Transform {
       offset = match.index + match[0].length;
     }
     if (offset < raw.length) records.push({ line: raw.slice(offset), ending: '' });
+    for (const { line } of records) {
+      const colon = line.indexOf(':');
+      if ((colon === -1 ? line : line.slice(0, colon)) !== 'id') continue;
+      const value = colon === -1 ? '' : line.slice(colon + 1).replace(/^ /, '');
+      if (!value.includes('\0')) this.lastEventId = value;
+    }
     const isDataLine = line => line.startsWith('data:') || line === 'data';
     const dataRecords = records.filter(record => isDataLine(record.line));
     const data = dataRecords.map(({ line }) => line.slice(4).replace(/^: ?/, '')).join('\n');
+    if (dataRecords.length) this.hasReplayCursor = this.lastEventId.length > 0;
     if (!data) return bytes;
     const updated = rewriteJsonBytes(Buffer.from(data), this.rewrite).toString('utf8');
     if (updated === data) return bytes;

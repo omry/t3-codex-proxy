@@ -1,5 +1,67 @@
 # Verification
 
+## Waiting guidance normalization; verified live
+
+Verified locally on 2026-11-21 after diagnostic checkpoint `cff76ab010f7`.
+Before normalization, the updated live `proxy-check` on T3
+`0.1.12-nightly.20261121.5024` reported FAIL for the remaining
+`t3_thread_wait` timeout instruction. T3 connectivity and the configured
+writable-root checks also passed. This preserves the requested live failing
+state before underlying remediation.
+
+The source now replaces that known timeout instruction and the two observed
+`next` hints in identified waiting-tool results, including JSON-text and
+structured content. Direct matching output-schema literals agree with the
+normalized results. This is a narrow exception to the earlier blanket
+result/schema preservation rule; task identity, status, timeout facts,
+summaries, input schemas and unrelated result fields remain unchanged.
+Unknown hints, unsupported schema shapes, errors, unrelated tools, disabled
+overrides and unsupported versions retain their previous behavior. The
+diagnostic still fails when a known conflict remains outside a supported
+rewrite shape; its pass criteria have not been relaxed.
+
+The metadata and reply regressions failed before the source change. All 243
+tests and syntax checks pass afterward, including JSON, SSE, GET replay,
+session separation, request-ID reuse and preserved result facts. Isolated
+real-Codex 0.171.0 smoke checks pass with enabled defaults and all overrides
+disabled. Fake model and MCP servers verify delivery of the normalized or
+original waiting hint to the next inference without calling live T3 tools.
+The smoke includes a starting task with a null child thread, matching the
+nullable `childThreadId` exposed by the current live T3 signature.
+
+After a coordinated restart, the regular diagnostic scan no longer found the
+known restriction, and the new developer and `task_status` guidance were
+visible. This did not prove that the direct tools were rewritten. The user
+reported the conflicting direct `t3_thread_wait` description still present.
+Inspection of the installed nightly 5024 server's `codexThreadRuntimeParams`
+found a second MCP server, `t3-code-direct`, with `delegate_task` and
+`t3_thread_wait` excluded from deferred/code-mode discovery. The wrapper had
+redirected only `t3-code`, leaving this model-visible route untouched.
+
+The source now redirects both exact server names through the existing proxy,
+preserving enabled/disabled tool lists, direct-exposure settings, headers and
+timeouts. Both the routing regression and real-Codex direct-description check
+failed before this change. The updated smoke uses the installed two-server
+layout, verifies the actual direct tool definition in the model request, and
+calls a fake direct waiting tool to check its normalized timeout reply at the
+next inference. Enabled and disabled checks pass. The underlying guidance
+fixture is from nightly 4580; the server layout is from installed nightly 5024.
+
+Checking the live signature also exposed a startup case the source fixture
+missed: `childThreadId` can be null. Its regression failed against the first
+normalization, then passed after a one-line guard correction. The final tests
+and smoke checks include both corrections.
+
+After the final reload, T3 explicitly refreshed the model-visible direct
+`t3_thread_wait` declaration with the workflow-controlled timeout guidance.
+The live `proxy-check` on nightly 5024 then passed all seven compatibility
+checks after inspection of the actual current developer instructions and tool
+descriptions. Its complete metadata scan had no known waiting conflicts, and
+both writable-root checks passed. This verifies instruction delivery and
+consistency in the running session, including the direct path that previously
+bypassed the proxy. No actual live delegated timeout or model compliance has
+been demonstrated, and no publication has occurred.
+
 ## Waiting diagnostic coverage; underlying issue remains
 
 Verified locally on 2026-11-21. The diagnostic now inspects effective waiting
