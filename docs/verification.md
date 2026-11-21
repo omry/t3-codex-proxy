@@ -60,7 +60,8 @@ descriptions. Its complete metadata scan had no known waiting conflicts, and
 both writable-root checks passed. This verifies instruction delivery and
 consistency in the running session, including the direct path that previously
 bypassed the proxy. No actual live delegated timeout or model compliance has
-been demonstrated, and no publication has occurred.
+been demonstrated. At the time of this verification, publication had not yet
+occurred.
 
 ## Waiting diagnostic coverage; underlying issue remains
 
@@ -110,7 +111,7 @@ The nightly retains assumed compatibility through its matching range.
 This fixes instruction delivery in the running session. It does not replay the
 reported Hydra incident or prove model compliance on an actual PR. After
 reviewing the live result, the user authorized the PR cycle, merge, and
-publication. Publication remains pending.
+publication. The later 0.1.5 release completed that publication process.
 
 ## Nightly 4928 PR waiting
 

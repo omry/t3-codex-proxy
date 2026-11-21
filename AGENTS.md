@@ -7,6 +7,8 @@ This repository uses Sapling for version control.
 
 ## Release verification and approval
 
+The executable release procedure is documented in [RELEASE.md](RELEASE.md).
+
 - Before publishing, show the user evidence that the requested fix works and
   wait for their approval to publish. Tests and isolated smoke checks do not
   replace a live `proxy-check` for compatibility fixes. Verify the changed
