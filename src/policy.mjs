@@ -6,6 +6,7 @@ export const WAITING_TOOL_NAMES = ['delegate_task', 'task_status', 't3_thread_wa
 export const RUNNING_TASK_NEXT_HINTS = [
   'Completion wakes this thread, so end your turn. Do not wait on it or poll it.',
   'Completion wakes this thread. End your turn unless you need this result now.',
+  'Completion wakes this thread. Do not wait on it or poll it. Continue other work, and end your turn when none is left.',
 ];
 export const THREAD_WAIT_END_TURN = 'On timeout, with `next` end your turn; without, call again.';
 export const WORKFLOW_WAITING_NEXT = 'Completion will notify this thread. Follow the workflow\'s bounded wait, deadline and recovery rules. When no workflow owns the wait, end this turn and await the notification.';
@@ -221,6 +222,7 @@ export function createPolicy(version, report = () => {}, overrides) {
     prWaiting: { rewrites: 0, unrecognized: 0 },
     browserRouting: { rewrites: 0, unrecognized: 0 },
     environmentRouting: { rewrites: 0, unrecognized: 0 },
+    waitingResults: { rewrites: 0, unrecognized: 0 },
   };
   const apply = (text, scope, feature, rules = featureRules[feature]) => rewriteGuidance(text, scope,
     rules, code => {
@@ -264,10 +266,14 @@ export function createPolicy(version, report = () => {}, overrides) {
       : typeof data.taskId === 'string' && (typeof data.childThreadId === 'string' || data.childThreadId === null) && typeof data.waitTimedOut === 'boolean';
     if (!identified || typeof data.next !== 'string') return false;
     if (!RUNNING_TASK_NEXT_HINTS.includes(data.next)) {
-      if (data.next !== WORKFLOW_WAITING_NEXT) report('unrecognized_waiting_hint');
+      if (data.next !== WORKFLOW_WAITING_NEXT) {
+        observations.waitingResults.unrecognized++;
+        report('unrecognized_waiting_hint');
+      }
       return false;
     }
     data.next = WORKFLOW_WAITING_NEXT;
+    observations.waitingResults.rewrites++;
     report('waiting_hint_rewritten');
     return true;
   };

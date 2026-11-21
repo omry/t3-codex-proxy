@@ -38,8 +38,18 @@ function delegateWaitingEvidence(metadata, enabled) {
   };
 }
 
+function guidelineDrift(diagnostics) {
+  const surfaces = [];
+  if (diagnostics.fixSet && !diagnostics.tested) surfaces.push('T3 version lacks exact proxy fixtures');
+  for (const [feature, observation] of Object.entries(diagnostics.observations ?? {})) {
+    if (observation?.unrecognized > 0) surfaces.push(`${feature} guidance wording`);
+  }
+  return { status: surfaces.length ? 'info' : 'none', surfaces };
+}
+
 export function proxyCheckResult(diagnostics, toolMetadata) {
   const waitingEvidence = delegateWaitingEvidence(toolMetadata, diagnostics.overrides.reviewWorkflow);
+  const drift = guidelineDrift(diagnostics);
   const writableRoots = diagnostics.writableRoots ?? { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured' };
   const rootPaths = Array.isArray(writableRoots.paths) ? writableRoots.paths : [];
   const rootEntries = Array.isArray(writableRoots.entries) && writableRoots.entries.length === rootPaths.length
@@ -88,6 +98,7 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
   }));
   const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded',
     delegateWaitingEvidence: waitingEvidence,
+    guidelineDrift: drift,
     writableRoots: { ...writableRoots, entries: reportEntries, agentCheck: rootTest ? 'required' : 'not_applicable' }, expected };
   const rootReport = rootEntries.length === 0 ? '- none configured'
     : rootEntries.map(entry => entry.processWritable
@@ -101,6 +112,9 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
         ? 'Compatibility: covered by exact-version automated tests.'
         : 'Compatibility: assumed compatible through the latest matching version range.'
       : 'Compatibility: unsupported. No explicit stable-version entry or matching prerelease range; the proxy leaves T3 guidance unchanged.',
+    ...(drift.status === 'info'
+      ? [`ℹ️ Guideline drift: ${drift.surfaces.join('; ')}. This is informational and does not by itself change PASS/FAIL/UNKNOWN.`]
+      : []),
     `Review workflow override: ${diagnostics.overrides.reviewWorkflow ? 'enabled' : 'disabled'}. ${expected.reviewWorkflow}`,
     `PR-wait override: ${diagnostics.overrides.prWaiting ? 'enabled' : 'disabled'}. ${expected.prWaiting}`,
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
