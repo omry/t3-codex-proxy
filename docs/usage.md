@@ -259,14 +259,22 @@ without an exact-version coverage warning. Unlisted stable releases are unsuppor
 Missing evidence about received
 guidance or connectivity is UNKNOWN.
 
-The delegate-waiting check inspects actual T3 instructions and tool guidance.
-When enabled, restrictive guidance that forbids all status checks or requires
-ending the turn instead of a workflow-owned wait is FAIL. Missing evidence is
-UNKNOWN. PASS requires explicit workflow control of supported bounded waits,
-deadlines and recovery, including retaining task identity after a timeout.
+The delegate-waiting check inspects actual T3 instructions, the `delegate_task`,
+`task_status` and `t3_thread_wait` descriptions, output schemas, and any
+already-visible `next` results. The diagnostic scans the current upstream
+discovery response after applying the configured rewrites. It reports known
+unconditional end-turn and no-wait instructions as failure evidence when the
+override is enabled. Workflow-priority developer guidance does not excuse a
+remaining conflicting instruction. Partial discovery or no detected conflict
+does not prove compatibility; the agent must inspect the remaining context.
+Missing evidence is UNKNOWN. PASS requires explicit workflow control of
+supported bounded waits, deadlines and recovery, including retaining task
+identity after a timeout, with no remaining unconditional waiting restrictions.
 When disabled, PASS verifies original T3 guidance, not bounded-wait support.
 The proxy does not implement delegate deadlines or guarantee timers, and it
-preserves tool-call results unchanged. The diagnostic does not create delegates,
+preserves tool-call results unchanged. This diagnostic checks instruction
+consistency; it does not demonstrate agent waiting or timeout recovery.
+The diagnostic does not create delegates,
 watches, schedules, or messages. T3 has no knowledge of this diagnostic tool,
 and existing T3 watch notifications remain unchanged.
 

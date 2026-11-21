@@ -1,5 +1,26 @@
 # Verification
 
+## Waiting diagnostic coverage; underlying issue remains
+
+Verified locally on 2026-11-21. The diagnostic now inspects effective waiting
+tool descriptions and output schemas from its authenticated `tools/list`
+response. Known unconditional `next` and `t3_thread_wait` instructions fail
+the enabled waiting check even when developer guidance gives the workflow
+priority. Missing metadata and no detected conflict do not imply a pass.
+
+An endpoint regression failed before the diagnostic change because the result
+had no failure evidence. After the change, the unchanged T3 source fixture
+reports FAIL for the `next` output-schema literal and `t3_thread_wait`
+description. Tests verify that these instructions and ordinary tool results
+remain unchanged, and that a disabled override still checks passthrough.
+All 226 tests and syntax checks pass.
+
+Local evaluation of the current session's exposed tool descriptions also
+reports FAIL for `t3_thread_wait`. This is a diagnostic truth fix: it detects
+the remaining conflict. The underlying waiting fix is deferred at the user's
+request. No shared backend restart or live `proxy-check` with the new
+diagnostic has occurred; the running proxy still needs to reload this source.
+
 ## Workflow coverage before PR watching
 
 Verified locally on 2026-11-20. The PR-wait guidance now requires checking the

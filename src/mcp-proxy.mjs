@@ -94,7 +94,8 @@ export async function startMcpProxy({ report = () => {}, rewriteToolsList = mess
             return { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'proxy_check_name_conflict' } };
           }
           if (kind === 'check') {
-            return { jsonrpc: '2.0', id: message.id, result: proxyCheckResult(diagnostics()) };
+            rewriteToolsList(message, report);
+            return { jsonrpc: '2.0', id: message.id, result: proxyCheckResult(diagnostics(), message.result) };
           }
           rewriteToolsList(message, report);
           if (!message.result.nextCursor) message.result.tools.push(structuredClone(PROXY_CHECK_TOOL));
