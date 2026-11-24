@@ -167,6 +167,12 @@ Known variants include the block captured from nightly
 issue-linking instructions. That fixture covers the PR block only; the release
 retains assumed compatibility through the nightly range.
 
+The watch-tool variant captured from nightly `0.1.12-nightly.20261124.5191`
+preserves its merge/close notifications while making end-of-turn guidance
+conditional on T3 owning the wait. The optional `until` argument and its
+`checks` and `merged` values remain unchanged. This description-only fixture
+does not establish complete exact-version coverage.
+
 The browser-routing fix replaces the condition that naming a page or tab permits
 browser automation. It prioritizes the user's selected tools and workflow, then
 suitable authenticated APIs, CLIs, or connectors. A missing operation in one
@@ -274,6 +280,13 @@ requested. New prerelease versions in a matching range are assumed compatible
 without an exact-version coverage warning. Unlisted stable releases are unsupported.
 Missing evidence about received
 guidance or connectivity is UNKNOWN.
+
+The PR-waiting check inspects the received developer guidance and the effective
+`watch_pull_request` description. Known unconditional watching or end-turn
+instructions in the description fail the enabled check, even when developer
+guidance gives the workflow priority. Missing metadata or no detected conflict
+does not establish a pass; the agent must inspect its current context. A disabled
+override instead verifies that original T3 behavior is preserved.
 
 The delegate-waiting check inspects actual T3 instructions, the `delegate_task`,
 `task_status` and `t3_thread_wait` descriptions, output schemas, and any

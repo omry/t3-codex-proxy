@@ -1,5 +1,51 @@
 # Verification
 
+## Nightly 5191 PR watching; verified live
+
+Verified on 2026-11-25 with T3 `0.1.12-nightly.20261124.5191`.
+The nightly changed the `watch_pull_request` description, so the old guarded
+rewrite missed it and left "After this call, end your turn." in the live tool.
+The initial all-green agent report missed that conflict.
+
+The description-only fixture records the exact live catalog wording, checked
+against the installed AppImage server bundle. It does not claim complete
+version or schema coverage. The diagnostic regressions failed before detection
+was added. The watch-description and endpoint regressions then failed before
+the new guarded rewrite was added. They pass afterward. Unknown surrounding
+wording containing the known restriction still produces `PR waiting: FAIL`;
+disabled overrides preserve T3 behavior. Conflict-free or missing metadata
+still requires inspection of received developer and tool guidance.
+
+The rewrite changes only the unconditional end-turn sentence. It preserves
+merge/close notifications, watch persistence, schemas and unrelated metadata.
+All 265 tests and syntax checks pass. Enabled and all-disabled isolated smoke
+checks pass with real Codex 0.172.0 and local fake model/MCP servers. Their
+composite fixture uses the 5191 watch description, 4928 PR context, 4774
+environment section and remaining 4580 inputs, rather than a complete capture
+of 5191 guidance.
+
+The requested updated live diagnostic failure was not demonstrated before the
+rewrite fix. The pre-restart MCP call returned the old diagnostic payload,
+without `prWaitingEvidence`. Inspection showed the conflicting live description,
+but reporting that as the promised updated diagnostic checkpoint overstated
+the evidence. The user chose one restart to verify the completed fix; the
+missing live pre-fix diagnostic checkpoint remains an explicit process gap.
+
+After that restart, the live `proxy-check` returned the new PR-wait evidence
+field, with no detected restrictions. The actual model-visible watch description
+now says "End your turn when T3 owns the wait; preserve any workflow-owned wait,
+deadlines, and recovery." The merge/close wording and optional `until` values
+`checks` and `merged` remain visible. Inspection of current developer guidance,
+regular tools and direct waiting tools supports all seven compatibility checks.
+The configured writable root passed both the proxy-process check and this
+Codex turn's create/delete check. T3 remained connected and assumed compatible
+through the matching nightly range.
+
+This is a truth fix verified in the running session for instruction delivery
+and consistency. It does not demonstrate behavior on an actual live PR wait or
+guarantee model compliance. At live verification, source changes remained local
+and publication had not occurred. The user then authorized the release.
+
 ## Waiting guidance normalization; verified live
 
 Verified locally on 2026-11-21 after diagnostic checkpoint `cff76ab010f7`.
