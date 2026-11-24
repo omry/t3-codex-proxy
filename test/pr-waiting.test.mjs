@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createPolicy, PR_WAITING_GUIDANCE } from '../src/policy.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/t3-pr-guidance-4928.json', import.meta.url)));
+const watchFixture = JSON.parse(readFileSync(new URL('./fixtures/t3-pr-watch-guidance-5191.json', import.meta.url)));
 const version = fixture.sourceVersion.slice(1);
 const runtime = `<runtime_info>private runtime marker</runtime_info>\n\n${fixture.pullRequestInstructions}`;
 const makeMessage = (value = runtime) => ({ method: 'turn/start', params: { additionalContext: {
@@ -84,4 +85,42 @@ test('4928 PR waiting remains independent of other overrides and unsupported sta
   const before = structuredClone(message);
   createPolicy('0.1.11').rewriteDeveloperContext(message);
   assert.deepEqual(message, before);
+});
+
+test('5191 watch rewrite removes the end-turn conflict and preserves notification behavior and schemas', () => {
+  const policy = createPolicy(watchFixture.sourceVersion.slice(1));
+  const message = { result: { tools: [{ name: 'watch_pull_request', description: watchFixture.watch_pull_request,
+    inputSchema: { type: 'object', properties: { until: { type: 'string', enum: ['checks', 'merged'] } } },
+    outputSchema: { type: 'object', properties: { watching: { type: 'boolean' } } },
+    annotations: { readOnlyHint: false },
+  }] } };
+  const before = structuredClone(message);
+  policy.rewriteToolsList(message);
+  const description = message.result.tools[0].description;
+  assert.ok(!description.includes('After this call, end your turn.'));
+  assert.equal(description, watchFixture.watch_pull_request.replace('After this call, end your turn.',
+    'End your turn when T3 owns the wait; preserve any workflow-owned wait, deadlines, and recovery.'));
+  before.result.tools[0].description = description;
+  assert.deepEqual(message, before);
+  policy.rewriteToolsList(message);
+  assert.deepEqual(message, before);
+  assert.equal(policy.diagnostics().observations.prWaiting.unrecognized, 0);
+});
+
+test('5191 watch rewrite preserves disabled, unsupported, unrelated and unrecognized descriptions', () => {
+  const changed = watchFixture.watch_pull_request.replace('The watch stays on:', 'The watch remains active:');
+  for (const [version, overrides, name, description] of [
+    [watchFixture.sourceVersion.slice(1), { prWaiting: false }, 'watch_pull_request', watchFixture.watch_pull_request],
+    ['0.1.12', undefined, 'watch_pull_request', watchFixture.watch_pull_request],
+    [watchFixture.sourceVersion.slice(1), undefined, 'other_tool', watchFixture.watch_pull_request],
+    [watchFixture.sourceVersion.slice(1), undefined, 'watch_pull_request', changed],
+  ]) {
+    const policy = createPolicy(version, () => {}, overrides);
+    const message = { result: { tools: [{ name, description }] } };
+    const before = structuredClone(message);
+    policy.rewriteToolsList(message);
+    assert.deepEqual(message, before);
+    assert.equal(policy.diagnostics().observations.prWaiting.unrecognized,
+      description === changed || version === '0.1.12' ? 1 : 0);
+  }
 });
