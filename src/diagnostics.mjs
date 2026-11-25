@@ -1,4 +1,5 @@
 import { WAITING_TOOL_NAMES, RUNNING_TASK_NEXT_HINTS, THREAD_WAIT_END_TURN } from './policy.mjs';
+import { routingRules } from './routing.mjs';
 
 export const PROXY_CHECK_REQUEST_GUIDANCE = 'The user requested the local T3 Codex Proxy diagnostic. Discover and call the t3-code MCP tool named proxy-check (it may appear as proxy_check in the host tool namespace) with empty arguments, then follow its diagnostic checklist. This identifies an existing read-only tool, so do not ask which proxy or project the user means. If the tool is unavailable, report that discovery failure; do not invent diagnostic results or substitute a network proxy test.';
 
@@ -70,9 +71,27 @@ function guidelineDrift(diagnostics) {
   return { status: surfaces.length ? 'info' : 'none', surfaces };
 }
 
+function routingEvidence(metadata, enabled, feature) {
+  const rules = routingRules[feature];
+  const names = Object.keys(rules).filter(name => name !== 'tools');
+  const tools = Array.isArray(metadata?.tools) ? metadata.tools : [];
+  const findings = [];
+  for (const tool of tools) {
+    if (!names.includes(tool?.name) || typeof tool.description !== 'string') continue;
+    for (const [before] of rules[tool.name]) {
+      if (tool.description.includes(before)) findings.push({ tool: tool.name, surface: 'description', instruction: before });
+    }
+  }
+  return { status: !enabled ? 'disabled' : findings.length ? 'fail' : 'unknown', findings,
+    missingTools: names.filter(name => !tools.some(tool => tool?.name === name && typeof tool.description === 'string')),
+    listComplete: Array.isArray(metadata?.tools) && !metadata.nextCursor };
+}
+
 export function proxyCheckResult(diagnostics, toolMetadata) {
   const waitingEvidence = delegateWaitingEvidence(toolMetadata, diagnostics.overrides.reviewWorkflow);
   const prEvidence = prWaitingEvidence(toolMetadata, diagnostics.overrides.prWaiting);
+  const environmentEvidence = routingEvidence(toolMetadata, diagnostics.overrides.environmentRouting, 'environmentRouting');
+  const deviceEvidence = routingEvidence(toolMetadata, diagnostics.overrides.deviceRouting, 'deviceRouting');
   const drift = guidelineDrift(diagnostics);
   const writableRoots = diagnostics.writableRoots ?? { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured' };
   const rootPaths = Array.isArray(writableRoots.paths) ? writableRoots.paths : [];
@@ -103,8 +122,14 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
       ? 'Your selected workflow and tools take priority. Otherwise, prefer an available authenticated API, CLI, or connector. A URL alone does not request browser automation; check existing authenticated tools before requesting browser login. Use browser automation when requested or needed, with T3 shared-browser controls.'
       : 'The proxy preserves T3 browser-selection and browser-tool guidance unchanged.',
     environmentRouting: diagnostics.overrides.environmentRouting
-      ? 'Use T3 environment tools only when the user explicitly requests a T3-linked environment or delegation through T3. Host, VM, load-balancer, service-endpoint, and repository references do not by themselves request environment linking.'
+      ? 'Use T3 environment tools only when the user explicitly requests a T3-linked environment or delegation through T3. Host, VM, load-balancer, service-endpoint, and repository references do not by themselves request environment linking. The t3_environment_link description must require an explicit request too.'
       : 'The proxy preserves T3 environment-routing guidance unchanged.',
+    prToolRouting: diagnostics.overrides.prToolRouting
+      ? 'The workflow controls PR tools, including gh or cafe when selected. Otherwise prefer available T3 PR tools. Keep required PR and issue linking.'
+      : 'The proxy preserves T3 PR-tool selection guidance unchanged.',
+    deviceRouting: diagnostics.overrides.deviceRouting
+      ? 'The workflow controls device tools and recovery. Otherwise use T3 device tools. Preserve pinned sessions and never reuse or close another session.'
+      : 'The proxy preserves T3 device-tool selection guidance unchanged.',
     reviewToolRouting: diagnostics.overrides.reviewWorkflow
       ? 'Your workflow controls available review tools. Use T3 review calls only when the workflow selects T3 delegates.'
       : 'The proxy preserves T3 review-tool routing guidance unchanged.',
@@ -123,6 +148,8 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
   const report = { ...diagnostics, compatibility, upstreamMcp: 'tools/list succeeded',
     delegateWaitingEvidence: waitingEvidence,
     prWaitingEvidence: prEvidence,
+    environmentRoutingEvidence: environmentEvidence,
+    deviceRoutingEvidence: deviceEvidence,
     guidelineDrift: drift,
     writableRoots: { ...writableRoots, entries: reportEntries, agentCheck: rootTest ? 'required' : 'not_applicable' }, expected };
   const rootReport = rootEntries.length === 0 ? '- none configured'
@@ -144,6 +171,8 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
     `PR-wait override: ${diagnostics.overrides.prWaiting ? 'enabled' : 'disabled'}. ${expected.prWaiting}`,
     `Browser-routing override: ${diagnostics.overrides.browserRouting ? 'enabled' : 'disabled'}. ${expected.browserRouting}`,
     `Environment-routing override: ${diagnostics.overrides.environmentRouting ? 'enabled' : 'disabled'}. ${expected.environmentRouting}`,
+    `PR-tool-routing override: ${diagnostics.overrides.prToolRouting ? 'enabled' : 'disabled'}. ${expected.prToolRouting}`,
+    `Device-routing override: ${diagnostics.overrides.deviceRouting ? 'enabled' : 'disabled'}. ${expected.deviceRouting}`,
     'T3 tool discovery: connected. The upstream tools/list request succeeded.',
     prEvidence.status === 'fail'
       ? 'PR waiting: FAIL. Unconditional watching or end-turn instructions remain in the effective watch_pull_request description, even with workflow-priority developer guidance.'
@@ -163,6 +192,12 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
     ...(!waitingEvidence.listComplete || waitingEvidence.missingTools.length
       ? [`Waiting metadata is incomplete. Missing tools: ${waitingEvidence.missingTools.join(', ') || 'none on this page'}; tools/list ${waitingEvidence.listComplete ? 'complete' : 'incomplete or unavailable'}. Inspect missing metadata in the current tool context; absent evidence is UNKNOWN.`]
       : []),
+    ...[['Environment routing', environmentEvidence], ['Device routing', deviceEvidence]].flatMap(([label, evidence]) => [
+      `${label} metadata evidence: ${evidence.status.toUpperCase()}. Inspect received guidance and tool descriptions; no known conflict alone is not proof of workflow control.`,
+      ...evidence.findings.map(({ tool, surface, instruction }) => `- ${tool} ${surface}: ${JSON.stringify(instruction)}`),
+      ...(!evidence.listComplete || evidence.missingTools.length
+        ? [`${label} metadata is incomplete. Missing tools: ${evidence.missingTools.join(', ') || 'none on this page'}. Inspect missing metadata; absent evidence is UNKNOWN.`] : []),
+    ]),
     'Writable roots (per directory):\n' + rootReport,
     rootTest ? `Sandbox write check: pending agent verification for ${rootPaths.length} configured root(s).` : 'Sandbox write check: not applicable; no writable roots are configured.',
     'Raw rewrite counts and exact-version test coverage are available in structuredContent for debugging. Counts cover the whole wrapper process, possibly other threads. Unmatched text is not proof of a conflict in this conversation.',
@@ -175,11 +210,12 @@ export function proxyCheckResult(diagnostics, toolMetadata) {
     rootTest
       ? `Run this shell check in the current Codex turn to verify create and delete access for every configured root. Report Sandbox write check as PASS only when every command succeeds, FAIL when a command fails, or UNKNOWN when you cannot run it. Do not substitute the proxy-process status. Then report exactly one Writable roots row per directory with exactly one status symbol at the start: use ✅ only when both the proxy-process and Codex-turn checks pass, ❌ when either check fails, or ❓ when the Codex-turn check is unavailable. Do not show separate symbols for the two checks. Render each full absolute directory path as a Markdown link using the path as both label and target. After the symbol, explain in plain text which check failed or is missing.\n\n${rootTest}`
       : 'Sandbox write check is not applicable because no writable roots are configured.',
-    'There are exactly seven compatibility checks: (1) Review context and continuity, (2) PR waiting, (3) Browser routing, (4) Review-tool routing, (5) Fixer assignment, (6) Delegate waiting and recovery, and (7) Environment routing. Checks 1, 4, 5, and 6 use the reviewWorkflow override; check 2 uses prWaiting; check 3 uses browserRouting; check 7 uses environmentRouting. Give each PASS, FAIL, or UNKNOWN based on the developer guidance and tool descriptions actually present in your context. For Environment routing when enabled, PASS requires the received machine-routing context to contain the replacement guidance and omit both original unconditional-linking bullets; FAIL means the original bullets remain or the replacement is absent; UNKNOWN means no machine-routing context is visible. When disabled, PASS means the original T3 wording is preserved. Missing evidence is UNKNOWN. Do not infer received guidance from config, expected text, or rewrite counts alone. Process-wide unmatched text does not fail this conversation by itself; a visible conflicting instruction does.',
+    'There are exactly nine compatibility checks: (1) Review context and continuity, (2) PR waiting, (3) Browser routing, (4) Review-tool routing, (5) Fixer assignment, (6) Delegate waiting and recovery, (7) Environment routing, (8) PR tool routing, and (9) Device routing. Checks 1, 4, 5, and 6 use the reviewWorkflow override; check 2 uses prWaiting; check 3 uses browserRouting; check 7 uses environmentRouting; check 8 uses prToolRouting; check 9 uses deviceRouting. Give each PASS, FAIL, or UNKNOWN based on the developer guidance and tool descriptions actually present in your context. For Environment routing when enabled, PASS requires the received machine-routing context to contain the replacement guidance and omit both original unconditional-linking bullets; FAIL means the original bullets remain or the replacement is absent; UNKNOWN means no machine-routing context is visible. Also inspect t3_environment_link: its description must require an explicit T3 linking or delegation request; mention-based linking wording is FAIL even when the developer context is correct. Missing tool metadata is UNKNOWN. When disabled, PASS means the original T3 wording is preserved. Missing evidence is UNKNOWN. Do not infer received guidance from config, expected text, or rewrite counts alone. Process-wide unmatched text does not fail this conversation by itself; a visible conflicting instruction does.',
     'For PR waiting when enabled, inspect the actual developer guidance and watch_pull_request description. PASS requires workflow control of PR waits with no unconditional watching or end-turn instructions on either surface. A conflicting watch-tool instruction is FAIL even when developer guidance gives the workflow priority. A prWaitingEvidence status of fail requires this check and the overall result to FAIL. Treat its unknown status as a request for context inspection, not as a pass; missing evidence is UNKNOWN. When disabled, PASS means original T3 PR-wait guidance and the watch description are preserved.',
     'For Delegate waiting and recovery when enabled, inspect the actual developer guidance, delegate_task, task_status and t3_thread_wait descriptions, output schemas and any already-visible next results. PASS requires explicit workflow control of supported bounded waits, deadlines and recovery, including keeping the same task identity after timeout, with no remaining unconditional end-turn or no-wait instructions on these surfaces. Restrictive guidance that requires ending the turn or forbids all task_status checks while a delegate runs is FAIL even when developer guidance says workflow-owned waiting takes priority. An unconditional next instruction in an output schema or already-visible tool result is also FAIL; do not excuse it because a higher-priority override exists. A delegateWaitingEvidence status of fail requires this check and the overall result to FAIL. Treat its unknown status as a request for context inspection, not as a pass; missing evidence is UNKNOWN. When disabled, PASS means original T3 guidance is preserved, not that bounded workflow waits are supported. This checks instruction consistency, not demonstrated agent waiting or timeout recovery. Do not claim that this proxy fixes delegation deadlines or guarantees timers, and preserve task identity, status, timeout facts and unrelated result content. The proxy normalizes only recognized next guidance in identified waiting-tool results.',
-    'Keep the user-facing result brief and in plain language. Start with "✅ Proxy check passed." only when the installation works and all seven compatibility checks pass, "❌ Proxy check found a problem." for any failure, or "❓ Proxy check incomplete." for missing evidence. A known failed or unresolved PR waiting, Delegate waiting and recovery, or Environment routing check must prevent an overall green result. Then give one installation sentence with the T3 version, compatibility qualification, and T3 connection status (connected, failed, or unknown). Do not give installation facts PASS labels or mix them into the compatibility list.',
-    'Follow the installation sentence with the exact heading "Compatibility checks (7):" and exactly seven bullets, in this order and with these labels: "Review context and continuity", "PR waiting", "Browser routing", "Review-tool routing", "Fixer assignment", "Delegate waiting and recovery", and "Environment routing". Begin each bullet with its status icon: ✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN. Each bullet must show enabled or disabled, PASS/FAIL/UNKNOWN, and a short concrete reason. Keep the text labels alongside the icons; a disabled override does not mean FAIL. Explain enabled overrides as workflow control and disabled overrides as preserving T3 behavior. Do not show raw counters, fix-set identifiers, test-coverage flags, or a separate proxy-facts inventory unless asked. For a failure or missing evidence, say what needs checking next.',
+    'For PR tool routing when enabled, PASS requires received runtime guidance to let the workflow select PR tools including gh or cafe, with no remaining unconditional T3-only tool rule. For Device routing when enabled, inspect received device guidance when present and the device_open and device_screenshot descriptions. PASS requires workflow control of tool selection and recovery, no instruction that overrides selected workflow tools, and no remaining unconditional device-tool restriction. Device guidance may be absent when the capability is unavailable; say it is not active and check the exposed descriptions without claiming device behavior was tested. Missing required tool descriptions is UNKNOWN. An environmentRoutingEvidence or deviceRoutingEvidence status of fail requires that check and the overall result to FAIL; unknown requires actual context inspection. Disabled overrides preserve original T3 behavior.',
+    'Keep the user-facing result brief and in plain language. Start with "✅ Proxy check passed." only when the installation works and all nine compatibility checks pass, "❌ Proxy check found a problem." for any failure, or "❓ Proxy check incomplete." for missing evidence. A known failed or unresolved PR waiting, Delegate waiting and recovery, Environment routing, PR tool routing, or Device routing check must prevent an overall green result. Then give one installation sentence with the T3 version, compatibility qualification, and T3 connection status (connected, failed, or unknown). Do not give installation facts PASS labels or mix them into the compatibility list.',
+    'Follow the installation sentence with the exact heading "Compatibility checks (9):" and exactly nine bullets, in this order and with these labels: "Review context and continuity", "PR waiting", "Browser routing", "Review-tool routing", "Fixer assignment", "Delegate waiting and recovery", "Environment routing", "PR tool routing", and "Device routing". Begin each bullet with its status icon: ✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN. Each bullet must show enabled or disabled, PASS/FAIL/UNKNOWN, and a short concrete reason. Keep the text labels alongside the icons; a disabled override does not mean FAIL. Explain enabled overrides as workflow control and disabled overrides as preserving T3 behavior. Do not show raw counters, fix-set identifiers, test-coverage flags, or a separate proxy-facts inventory unless asked. For a failure or missing evidence, say what needs checking next.',
   ].join('\n');
   return {
     content: [{ type: 'text', text: facts + '\n\nDiagnostic checklist:\n' + instructions }],

@@ -10,7 +10,9 @@ for (const fixture of fixtures) {
   for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true]) for (const browserRouting of [false, true]) for (const environmentRouting of [false, true]) {
     test(`${fixture.sourceVersion}: review=${reviewWorkflow}, PR waiting=${prWaiting}, browser=${browserRouting}, environment=${environmentRouting} stay independent`, () => {
       const events = [];
-      const policy = createPolicy(fixture.sourceVersion.slice(1), event => events.push(event), { reviewWorkflow, prWaiting, browserRouting, environmentRouting });
+      const policy = createPolicy(fixture.sourceVersion.slice(1), event => events.push(event), {
+        reviewWorkflow, prWaiting, browserRouting, environmentRouting, prToolRouting: false, deviceRouting: false,
+      });
       const runtime = `<runtime_info>private runtime marker</runtime_info>\n\n${fixture.pullRequestInstructions}`;
       const browserContext = fixture.sections?.find(section => section.startsWith('### Visuals and preview'));
       const environmentContext = fixture.sections?.find(section => section.includes('Another machine: `t3_environment_links`'));

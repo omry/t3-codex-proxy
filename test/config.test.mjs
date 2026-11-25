@@ -30,7 +30,7 @@ test('override booleans merge with enabled defaults independently', async t => {
     { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true }]) {
     const file = await configFile(t, { realCodex: '/fake/codex', overrides });
     assert.deepEqual(await loadConfig({ configFile: file, env: {} }), {
-      realCodex: '/fake/codex', overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true, ...overrides },
+      realCodex: '/fake/codex', overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true, prToolRouting: true, deviceRouting: true, ...overrides },
       additionalWritableRoots: [],
     });
   }

@@ -9,7 +9,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, WORKFLOW_WAITING_NEXT } from '../src/policy.mjs';
+import { BROWSER_ROUTING_GUIDANCE, ENVIRONMENT_ROUTING_GUIDANCE, PR_WAITING_GUIDANCE, PR_TOOL_ROUTING_GUIDANCE, REVIEW_GUIDANCE, REVIEW_FIXER_GUIDANCE, DELEGATE_WAITING_GUIDANCE, WORKFLOW_WAITING_NEXT } from '../src/policy.mjs';
 import { resolveOverrides } from '../src/config.mjs';
 import { PROXY_CHECK_REQUEST_GUIDANCE } from '../src/diagnostics.mjs';
 
@@ -41,6 +41,8 @@ let requestWaitingHint = false;
 let waitingHintCalled = false;
 let requestDirectWait = false;
 let directWaitCalled = false;
+let requestRoutingInfo = false;
+let routingInfoCalled = false;
 const server = http.createServer(async (request, response) => {
   if (request.url.startsWith('/responses')) {
     const parts = [];
@@ -50,7 +52,12 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     let item = { id: 'msg_fake', type: 'message', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'Isolated fixture response.', annotations: [] }] };
-    if (requestDiagnostic && !diagnosticCalled) {
+    if (requestRoutingInfo && !routingInfoCalled) {
+      item = { id: 'fc_routing_info', type: 'custom_tool_call', call_id: 'routing_info_smoke',
+        namespace: 'functions', name: 'exec', status: 'completed',
+        input: 'text(ALL_TOOLS.filter(tool => /__(t3_environment_link|device_open|device_screenshot)$/.test(tool.name)));' };
+      routingInfoCalled = true;
+    } else if (requestDiagnostic && !diagnosticCalled) {
       item = { id: 'fc_proxy_check', type: 'custom_tool_call', call_id: 'proxy_check_smoke',
         namespace: 'functions', name: 'exec', status: 'completed',
         input: 'const tool = ALL_TOOLS.find(tool => /proxy[-_]check$/.test(tool.name)); if (!tool) throw new Error("missing proxy diagnostic"); text(await tools[tool.name]({}));' };
@@ -93,6 +100,9 @@ const server = http.createServer(async (request, response) => {
       inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'] },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     { ...waitingFixture.tools[2], annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+    ...['t3_environment_link', 'device_open', 'device_screenshot'].filter(name => fixture[name]).map(name => ({
+      name, description: fixture[name], inputSchema: { type: 'object', properties: {} },
+    })),
   ] });
   if (message.method === 'tools/call' && message.params?.name === 'task_status') {
     return reply({ content: [{ type: 'text', text: JSON.stringify(fakeTask) }], structuredContent: fakeTask });
@@ -209,7 +219,7 @@ requires_openai_auth = false
   const context = Object.fromEntries(sections.map((value, i) =>
     [`t3_code_orchestration_${String(i + 1).padStart(2, '0')}`, { kind: 'application', value }]));
   context.t3_code_runtime = { kind: 'application', value: fixture.pullRequestInstructions };
-  context.t3_code_tools = { kind: 'application', value: fixture.browserTools };
+  context.t3_code_tools = { kind: 'application', value: fixture.browserTools + (fixture.devices ? '\n\n' + fixture.devices : '') };
   await runTurn(context);
   const directNamespace = modelRequests[0].input.flatMap(item => item.tools ?? []).find(tool => tool.name === 'mcp__t3_code_direct');
   assert.ok(directNamespace, 'Direct T3 tools are exposed directly to the model');
@@ -217,6 +227,12 @@ requires_openai_auth = false
   const oldBullet = fixture.originalReviewText ?? fixture.context.split('\n').find(line => line.startsWith('- For independent'));
   assert.ok(oldBullet, 'Fixture identifies the original conflicting review guidance');
   const developerText = request => JSON.stringify(request.input.filter(item => item.role === 'developer'));
+  const checkToolRouting = request => {
+    if (!fixture.devices) return;
+    assert.equal(developerText(request).includes(PR_TOOL_ROUTING_GUIDANCE), overrides.prToolRouting);
+    assert.equal(developerText(request).includes('Follow the user\'s selected workflow and device tools.'), overrides.deviceRouting);
+    assert.equal(developerText(request).includes('These rules override memory notes, docs and delegated tasks'), !overrides.deviceRouting);
+  };
   const checkEnvironmentRouting = request => {
     assert.equal(developerText(request).includes(ENVIRONMENT_ROUTING_GUIDANCE), overrides.environmentRouting && environmentBullets.length > 0);
     for (const bullet of environmentBullets) {
@@ -234,6 +250,7 @@ requires_openai_auth = false
   assert.equal(developerText(modelRequests[0]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[0]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   checkEnvironmentRouting(modelRequests[0]);
+  checkToolRouting(modelRequests[0]);
   assert.equal(developerText(modelRequests[0]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   await call('thread/inject_items', { threadId: thread.thread.id, items: Object.entries(context).map(([tag, entry], i) => {
     return { type: 'message', role: 'developer', content: [{ type: 'input_text',
@@ -252,6 +269,7 @@ requires_openai_auth = false
   assert.equal(developerText(modelRequests[1]).includes(PR_WAITING_GUIDANCE), overrides.prWaiting);
   assert.equal(developerText(modelRequests[1]).includes(BROWSER_ROUTING_GUIDANCE), overrides.browserRouting);
   checkEnvironmentRouting(modelRequests[1]);
+  checkToolRouting(modelRequests[1]);
   assert.equal(developerText(modelRequests[1]).includes('names a page or tab'), !overrides.browserRouting && hasPageCondition);
   requestDiagnostic = true;
   await runTurn(context);
@@ -267,7 +285,7 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes('Compatibility: covered by exact-version automated tests.') ||
     diagnosticText.includes('Compatibility: assumed compatible through the latest matching version range.'));
   assert.ok(diagnosticText.includes('Proxy check passed.'));
-  assert.ok(diagnosticText.includes('Compatibility checks (7):'));
+  assert.ok(diagnosticText.includes('Compatibility checks (9):'));
   assert.ok(diagnosticText.includes('Delegate waiting and recovery'));
   assert.ok(diagnosticText.includes('Environment routing'));
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
@@ -288,6 +306,16 @@ requires_openai_auth = false
   const directText = JSON.stringify(directOutput.output);
   assert.equal(directText.includes(WORKFLOW_WAITING_NEXT), expectWorkflowWait, directText);
   assert.equal(directText.includes(originalNext), !expectWorkflowWait, directText);
+  if (fixture.devices) {
+    requestRoutingInfo = true;
+    await runTurn();
+    const output = modelRequests.at(-1).input.find(item => item.type === 'custom_tool_call_output' && item.call_id === 'routing_info_smoke');
+    assert.ok(output, 'Rewritten device and environment tool descriptions reach the real-Codex inference');
+    const text = JSON.stringify(output.output);
+    assert.equal(text.includes('user explicitly requests T3 environment linking'), overrides.environmentRouting);
+    assert.equal(text.includes('workflow selects T3 device tools'), overrides.deviceRouting);
+    for (const name of ['t3_environment_link', 'device_open', 'device_screenshot']) assert.ok(text.includes(name));
+  }
   assert.ok(directText.includes('isolated-child') && directText.includes('timedOut'));
   console.log(JSON.stringify({ result: 'passed', t3Version, overrides, codex: initialized.userAgent, checks: [
     'isolated real Codex thread starts through wrapper', 'fake MCP authenticates through local proxy',

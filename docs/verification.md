@@ -1,5 +1,55 @@
 # Verification
 
+## PR tool choice, device tool choice, and environment-link descriptions
+
+Verified locally on 2026-11-26 against partial source captures from installed
+T3 `0.1.13-nightly.20261125.5245`, commit `1c3f0ee88fc7`. This capture does not
+add the release to the complete exact-version coverage list.
+
+The new independent `prToolRouting` and `deviceRouting` switches default to
+true. PR tool selection follows the user's workflow, including `gh` or `cafe`
+when selected, while retaining PR and issue linking. Device instructions and
+the `device_open` and `device_screenshot` descriptions let the workflow choose
+tools and recovery, keeping T3 as the default and retaining session ownership.
+The existing `environmentRouting` switch now also requires an explicit request
+in the `t3_environment_link` description. Config validation, setup controls,
+examples, and the nine-check diagnostic include these changes.
+
+These are local guidance truth fixes: the changed output removes the conflicting
+instructions instead of merely hiding the claims in the diagnostic. Live instruction delivery was subsequently checked after the proxy reloaded this
+checkout, as recorded below.
+The diagnostic now detects preserved conflicting environment and device tool
+descriptions; a clean metadata scan still needs actual received-context inspection.
+
+The focused new routing tests failed before implementation. After implementation,
+all 288 tests and syntax checks passed. The full suite requires execution outside
+the sandbox for temporary loopback listeners and child processes; the initial
+sandbox attempt failed with EPERM. The package dry run passed with a temporary
+npm cache because the default cache is read-only in the sandbox.
+
+Isolated real-Codex 0.172.0 smoke checks passed with all overrides enabled and
+with all disabled, advertised as nightly 5245. Temporary fake model and MCP
+servers verified initial and reinjected developer context, regular tool-description
+discovery reaching inference, direct waiting descriptions and replies, and the
+nine-check diagnostic. No live device, delegate, or linked machine was exercised.
+The subsequent live `proxy-check` on nightly 5245 passed all nine instruction
+checks. The current developer runtime lets the workflow choose PR tools,
+including `gh` and `cafe`. Current discovery exposes environment linking only
+on an explicit request and device-tool descriptions that defer tool choice to
+the workflow. Device developer guidance is not active in this conversation;
+its complete rewrite was verified by the isolated real-Codex smoke, while the
+live check covers the exposed descriptions. The waiting metadata scan was
+complete, with no known conflicts; installed output schemas use a plain-string
+`next`. Both proxy-process access and this turn's create/delete marker check
+passed for `/home/omry/.local/state/awd`. The earlier read-only
+`orchestrator_capabilities` call in this thread succeeded; the live diagnostic
+also authenticated a fresh upstream `tools/list` request.
+
+This is instruction-delivery verification, not a demonstration of a live device,
+delegate timeout, or environment-link operation. At the time of that live check, publication, a version bump,
+and remote push had not occurred.
+
+
 ## Nightly 5191 PR watching; verified live
 
 Verified on 2026-11-25 with T3 `0.1.12-nightly.20261124.5191`.

@@ -5,6 +5,8 @@
     "reviewWorkflow": true,
     "prWaiting": true,
     "browserRouting": true,
-    "environmentRouting": true
+    "environmentRouting": true,
+    "prToolRouting": true,
+    "deviceRouting": true
   }
 }

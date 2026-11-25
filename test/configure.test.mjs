@@ -38,6 +38,8 @@ test('explicit configure page is loopback-bound, origin-checked and writes priva
   const pageText = await page.text();
   assert.ok(pageText.includes('T3 Codex Proxy setup'));
   assert.ok(pageText.includes('id="environmentRouting"'));
+  assert.ok(pageText.includes('id="prToolRouting"'));
+  assert.ok(pageText.includes('id="deviceRouting"'));
   const forbidden = await fetch(url + '/config', { method: 'POST', headers: {
     origin: 'http://evil.invalid', 'content-type': 'application/json',
   }, body: JSON.stringify({ realCodex: '/bin/sh' }) });
@@ -46,9 +48,12 @@ test('explicit configure page is loopback-bound, origin-checked and writes priva
   const saved = await fetch(url + '/config', { method: 'POST', headers: {
     origin: new URL(url).origin, 'content-type': 'application/json',
   }, body: JSON.stringify({ realCodex: '/bin/sh', additionalWritableRoots: [],
-    overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: false } }) });
+    overrides: { reviewWorkflow: true, prWaiting: true, browserRouting: false, prToolRouting: false, deviceRouting: false } }) });
   assert.equal(saved.status, 200);
   assert.equal((await new Promise(resolve => child.once('close', resolve))), 0);
-  assert.equal(JSON.parse(await readFile(config)).realCodex, '/bin/sh');
+  const stored = JSON.parse(await readFile(config));
+  assert.equal(stored.realCodex, '/bin/sh');
+  assert.equal(stored.overrides.prToolRouting, false);
+  assert.equal(stored.overrides.deviceRouting, false);
   assert.equal((await stat(config)).mode & 0o777, 0o600);
 });

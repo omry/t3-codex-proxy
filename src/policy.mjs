@@ -1,5 +1,6 @@
 import { selectCompatibility } from './compatibility.mjs';
 import { resolveOverrides } from './config.mjs';
+import { routingRules } from './routing.mjs';
 
 // Version-selected, guarded substitutions. User prompts are never rewritten.
 export const WAITING_TOOL_NAMES = ['delegate_task', 'task_status', 't3_thread_wait'];
@@ -169,6 +170,16 @@ prWaitingRules.current.runtime.push(prWaitingRules.current.runtime[3].map(text =
   '\n</pull_request_linking>',
   ' When pull_request_* tools are listed, use them, not gh or cafe, to read, list, open, edit, review, reply on, close, or merge PRs, and ci_logs and ci_rerun for their checks. pull_request_create links for you.\nIf available, call link_issue for each issue you take on or file, even via CLI; skip issues you only read.\n</pull_request_linking>')));
 
+export const PR_TOOL_ROUTING_GUIDANCE = "Follow the user's workflow for PR tools, including gh or cafe when selected. Otherwise prefer available pull_request_* tools for PR operations and ci_logs and ci_rerun for checks. pull_request_create links for you.";
+const originalPrToolRouting = 'When pull_request_* tools are listed, use them, not gh or cafe, to read, list, open, edit, review, reply on, close, or merge PRs, and ci_logs and ci_rerun for their checks. pull_request_create links for you.';
+// Match complete known PR blocks, before or after the independent waiting rewrite.
+const prToolRoutingRules = { runtime: prWaitingRules.current.runtime.flat()
+  .filter(text => text.includes(originalPrToolRouting))
+  .map(text => [text, text.replace(originalPrToolRouting, PR_TOOL_ROUTING_GUIDANCE)]) };
+prWaitingRules.current.runtime.push(...prWaitingRules.current.runtime
+  .filter(pair => pair[0].includes(originalPrToolRouting))
+  .map(pair => pair.map(text => text.replace(originalPrToolRouting, PR_TOOL_ROUTING_GUIDANCE))));
+
 function rewriteGuidance(text, scope, rules, report, feature) {
   if (typeof text !== 'string') return text;
   let result = text;
@@ -178,7 +189,8 @@ function rewriteGuidance(text, scope, rules, report, feature) {
       ((scope === 'task_status' || scope === 't3_thread_wait') && rules[scope])) {
     const replacements = (rules[scope] ?? []).map(([, after]) => after);
     const warning = { reviewWorkflow: 'unrecognized_review_guidance', prWaiting: 'unrecognized_pr_wait_guidance',
-      browserRouting: 'unrecognized_browser_routing_guidance', environmentRouting: 'unrecognized_environment_routing_guidance' }[feature];
+      browserRouting: 'unrecognized_browser_routing_guidance', environmentRouting: 'unrecognized_environment_routing_guidance',
+      prToolRouting: 'unrecognized_pr_tool_routing_guidance', deviceRouting: 'unrecognized_device_routing_guidance' }[feature];
     if (!replacements.some(after => text.includes(after))) report(warning);
   }
   return result;
@@ -221,12 +233,16 @@ export function createPolicy(version, report = () => {}, overrides) {
   const rules = compatibility.fixSet === 'legacy' ? legacyRules : compatibility.fixSet === 'current' ? currentRules : {};
   const featureRules = { reviewWorkflow: rules, prWaiting: prWaitingRules[compatibility.fixSet] ?? {},
     browserRouting: browserRoutingRules[compatibility.fixSet] ?? {},
-    environmentRouting: environmentRoutingRules[compatibility.fixSet] ?? [] };
+    environmentRouting: environmentRoutingRules[compatibility.fixSet] ?? [],
+    prToolRouting: compatibility.fixSet === 'current' ? prToolRoutingRules : {},
+    deviceRouting: compatibility.fixSet === 'current' ? routingRules.deviceRouting : {} };
   const observations = {
     reviewWorkflow: { rewrites: 0, unrecognized: 0 },
     prWaiting: { rewrites: 0, unrecognized: 0 },
     browserRouting: { rewrites: 0, unrecognized: 0 },
     environmentRouting: { rewrites: 0, unrecognized: 0 },
+    prToolRouting: { rewrites: 0, unrecognized: 0 },
+    deviceRouting: { rewrites: 0, unrecognized: 0 },
     waitingResults: { rewrites: 0, unrecognized: 0 },
   };
   const apply = (text, scope, feature, rules = featureRules[feature]) => rewriteGuidance(text, scope,
@@ -244,6 +260,17 @@ export function createPolicy(version, report = () => {}, overrides) {
     if (settings.browserRouting && key === 't3_code_tools' && typeof value === 'string' && /\bbrowser\b/i.test(value)) {
       value = apply(value, 'tools', 'browserRouting');
     }
+    if (settings.deviceRouting && key === 't3_code_tools' && compatibility.fixSet === 'current' &&
+        typeof value === 'string' && value.includes('## T3 Code devices')) {
+      // Only rewrite the complete known device section, not a prefix of changed guidance.
+      value = value.replace(/(^|\n)(## T3 Code devices\r?\n[\s\S]*?)(?=\n## |$)/g,
+        (_whole, prefix, section) => {
+          if (routingRules.deviceRouting.tools.some(pair => pair.includes(section))) return prefix + apply(section, 'tools', 'deviceRouting');
+          observations.deviceRouting.unrecognized++;
+          report('unrecognized_device_routing_guidance');
+          return prefix + section;
+        });
+    }
     if (/^t3_code_orchestration_\d+$/.test(key) && compatibility.fixSet && settings.environmentRouting && typeof value === 'string' &&
         /t3_environment_links|t3_environment_link|Another machine|machine the user names|environment linking/i.test(value)) {
       const variants = featureRules.environmentRouting;
@@ -255,10 +282,23 @@ export function createPolicy(version, report = () => {}, overrides) {
         report('unrecognized_environment_routing_guidance');
       }
     }
-    if (settings.prWaiting && key === 't3_code_runtime') return apply(value, 'runtime', 'prWaiting');
+    if (key === 't3_code_runtime') {
+      if (settings.prWaiting) value = apply(value, 'runtime', 'prWaiting');
+      if (settings.prToolRouting && compatibility.fixSet === 'current' && typeof value === 'string' &&
+          /pull_request_\* tools|workflow for PR tools/.test(value)) value = apply(value, 'runtime', 'prToolRouting');
+    }
     return value;
   };
   const rewriteTool = (name, text) => {
+    const feature = name === 't3_environment_link' ? 'environmentRouting'
+      : ['device_open', 'device_screenshot'].includes(name) ? 'deviceRouting' : null;
+    if (feature && settings[feature] && compatibility.fixSet === 'current') {
+      const pairs = routingRules[feature][name];
+      if (pairs.some(([before, after]) => text === before || text === after)) return apply(text, name, feature, routingRules[feature]);
+      observations[feature].unrecognized++;
+      report(`unrecognized_${feature === 'deviceRouting' ? 'device' : 'environment'}_routing_guidance`);
+      return text;
+    }
     if (settings.reviewWorkflow && ['delegate_task', 't3_thread_send', 'task_status', 't3_thread_wait'].includes(name)) return apply(text, name, 'reviewWorkflow');
     if (settings.prWaiting && name === 'watch_pull_request') return apply(text, name, 'prWaiting');
     return text;

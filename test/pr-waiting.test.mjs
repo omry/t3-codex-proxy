@@ -16,7 +16,7 @@ const makeMessage = (value = runtime) => ({ method: 'turn/start', params: { addi
 for (const enabled of [false, true]) {
   test(`4928 PR waiting ${enabled ? 'enabled' : 'disabled'}: context, reinjection and routing preservation`, () => {
     const events = [];
-    const policy = createPolicy(version, event => events.push(event), { prWaiting: enabled });
+    const policy = createPolicy(version, event => events.push(event), { prWaiting: enabled, prToolRouting: false });
     const message = makeMessage();
     const before = structuredClone(message);
     policy.rewriteDeveloperContext(message);

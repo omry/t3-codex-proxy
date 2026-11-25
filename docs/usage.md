@@ -59,7 +59,9 @@ The setup page edits a file with this shape:
     "reviewWorkflow": true,
     "prWaiting": true,
     "browserRouting": true,
-    "environmentRouting": true
+    "environmentRouting": true,
+    "prToolRouting": true,
+    "deviceRouting": true
   }
 }
 ```
@@ -71,9 +73,9 @@ detects a Codex executable from `PATH` as its initial value. Run
 `~/.config/t3-codex-proxy/config.json` when `XDG_CONFIG_HOME` is unset.
 `T3_CODEX_PROXY_CONFIG` can select another absolute path.
 
-The four override switches are independent. `proxy-check` reports seven
-compatibility checks: four use `reviewWorkflow`, one uses `prWaiting`, one uses
-`browserRouting`, and one uses `environmentRouting`.
+The six override switches are independent. `proxy-check` reports nine
+compatibility checks: four use `reviewWorkflow`; the other five use `prWaiting`,
+`browserRouting`, `environmentRouting`, `prToolRouting`, and `deviceRouting` each.
 
 ## Versions
 
@@ -163,8 +165,9 @@ that a model correctly classifies every PR.
 Repeat the README installation check after upgrading to detect any changed
 instruction wording.
 Known variants include the block captured from nightly
-`0.1.11-nightly.20261119.4928`, preserving its added PR-tool routing and
-issue-linking instructions. That fixture covers the PR block only; the release
+`0.1.11-nightly.20261119.4928`, preserving issue-linking instructions. The independent `prToolRouting` override
+lets the user or workflow choose PR tools, including `gh` and `cafe`; otherwise
+it prefers the available T3 PR tools. PR linking remains required. That fixture covers the PR block only; the release
 retains assumed compatibility through the nightly range.
 
 The watch-tool variant captured from nightly `0.1.12-nightly.20261124.5191`
@@ -187,7 +190,8 @@ user explicitly requests a T3-linked environment or T3 delegation to another
 machine. Naming a host, VM, load balancer, service endpoint, or repository for
 debugging does not request environment linking. This changes developer
 guidance; it cannot enforce model behavior or guarantee tool availability. The
-`environmentRouting` switch controls this rewrite.
+`environmentRouting` switch controls this rewrite and the exact environment-link
+tool description captured from nightly 5245. Both require an explicit request.
 
 The known machine-routing variants include the shorter pair captured from
 nightly `0.1.10-nightly.20261116.4774`. Both complete bullets must match one known
@@ -205,11 +209,20 @@ supported wait and recovery operations. The proxy does not implement those
 operations or guarantee wall-clock deadlines. The `prWaiting` switch applies
 to PR waits and does not control delegate waits.
 
+The `deviceRouting` override replaces the exact device section captured from
+nightly 5245 and its `device_open` and `device_screenshot` descriptions. The
+workflow chooses device tools and recovery. Without a selection, T3 tools remain
+the default. T3 sessions stay pinned; another session must never be reused or
+closed. Device instructions may be absent when the capability is unavailable.
+Unknown device sections and tool descriptions remain unchanged and are reported.
+This partial fixture does not establish full exact-version coverage.
+
 ## Overrides and diagnostics
 
 The user config has an optional `overrides` object. In an unpacked checkout,
 `config.local.json` remains a development fallback. `reviewWorkflow`,
-`prWaiting`, `browserRouting`, and `environmentRouting` each default to
+`prWaiting`, `browserRouting`, `environmentRouting`, `prToolRouting`, and
+`deviceRouting` each default to
 `true`; explicit `false`
 leaves that behavior's developer text and tool descriptions unchanged. Unknown names, null, arrays,
 and non-boolean values are rejected. Legacy unrelated top-level properties
@@ -234,7 +247,7 @@ For a `turn/start` request whose only input is the exact text `proxy-check` or
 application runtime context, the wrapper adds a small application-context hint
 to discover and call that tool. The user input stays unchanged. Discussion of
 the command and requests with attachments do not trigger this hint. This local
-diagnostic routing is independent of the four guidance override switches.
+diagnostic routing is independent of the six guidance override switches.
 The agent still makes the tool call and writes the final answer; this is not a
 direct chat-command response from the wrapper.
 The result includes a read-only writable-root block with one row per configured
@@ -266,13 +279,15 @@ of the current conversation's context. Process-wide unmatched text does not
 by itself indicate conflicting instructions in this conversation. The agent
 reports a short overall result, one installation sentence with the T3 version,
 compatibility qualification, and connection status, then "Compatibility checks
-(7):" with exactly seven bullets: review context and continuity, PR waiting,
+(9):" with exactly nine bullets: review context and continuity, PR waiting,
 browser routing, review-tool routing, fixer assignment, delegate waiting and
-recovery, and environment routing. Checks 1, 4, 5, and 6 use `reviewWorkflow`;
+recovery, environment routing, PR tool routing, and device routing.
+Checks 1, 4, 5, and 6 use `reviewWorkflow`;
 check 2 uses `prWaiting`; check 3 uses `browserRouting`; and check 7 uses
-`environmentRouting`. Each bullet shows its
+`environmentRouting`; check 8 uses `prToolRouting`; check 9 uses `deviceRouting`.
+Each bullet shows its
 PASS/FAIL/UNKNOWN result and a short reason, along with whether its
-override is enabled or disabled. The overall result is green only when all seven
+override is enabled or disabled. The overall result is green only when all nine
 checks pass. The overall result and each bullet use ✅ for pass, ❌ for failure,
 and ❓ for missing evidence. A disabled override can still pass. Installation
 facts have no PASS labels. It omits raw counters and internal identifiers unless
@@ -404,7 +419,8 @@ subject to Codex's logging behavior.
 
 `guidance_rewritten` and `mcp_endpoint_redirected` report that those operations
 occurred. `unrecognized_review_guidance`, `unrecognized_pr_wait_guidance`, and
-`unrecognized_browser_routing_guidance`
+`unrecognized_browser_routing_guidance`, `unrecognized_environment_routing_guidance`,
+`unrecognized_pr_tool_routing_guidance`, and `unrecognized_device_routing_guidance`
 mean targeted text has unknown wording: it was preserved, so the requested
 policy may not be in effect. Disabled overrides produce no guidance warnings.
 `proxy_check_name_conflict` means the upstream now uses the reserved diagnostic
