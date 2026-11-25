@@ -60,7 +60,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(data.t3Version, '0.1.3');
     assert.equal(data.compatibility, 'tested');
     assert.deepEqual(data.writableRoots, { paths: [], entries: [], configured: 0, processWritable: 0, status: 'not_configured', agentCheck: 'not_applicable' });
-    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting, environmentRouting });
+    assert.deepEqual(data.overrides, { reviewWorkflow, prWaiting, browserRouting, environmentRouting, prToolRouting: true, deviceRouting: true });
     assert.equal(data.upstreamMcp, 'tools/list succeeded');
     assert.equal(data.observations.reviewWorkflow.rewrites > 0, reviewWorkflow);
     assert.equal(data.observations.prWaiting.rewrites > 0, prWaiting);
@@ -70,8 +70,8 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.equal(data.observations.environmentRouting.rewrites > 0, environmentRouting);
     assert.equal(data.observations.environmentRouting.unrecognized, 0);
     assert.deepEqual(Object.keys(data.expected).sort(), [
-      'browserRouting', 'delegateWaitingRecovery', 'environmentRouting', 'fixerAssignment',
-      'prWaiting', 'reviewToolRouting', 'reviewWorkflow',
+      'browserRouting', 'delegateWaitingRecovery', 'deviceRouting', 'environmentRouting', 'fixerAssignment',
+      'prToolRouting', 'prWaiting', 'reviewToolRouting', 'reviewWorkflow',
     ]);
     assert.ok(data.expected.reviewWorkflow.includes(reviewWorkflow ? 'workflow controls' : 'preserves T3'));
     assert.ok(data.expected.prWaiting.includes(prWaiting ? 'workflow controls' : 'preserves T3'));
@@ -93,8 +93,8 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes('"❓ Proxy check incomplete."'));
     assert.ok(text.includes('✅ for PASS, ❌ for FAIL, or ❓ for UNKNOWN'));
     assert.ok(text.includes('Keep the text labels alongside the icons; a disabled override does not mean FAIL'));
-    assert.ok(text.includes('There are exactly seven compatibility checks'));
-    assert.ok(text.includes('"Compatibility checks (7):" and exactly seven bullets'));
+    assert.ok(text.includes('There are exactly nine compatibility checks'));
+    assert.ok(text.includes('"Compatibility checks (9):" and exactly nine bullets'));
     for (const label of [
       'Review context and continuity', 'PR waiting', 'Browser routing',
       'Review-tool routing', 'Fixer assignment', 'Delegate waiting and recovery', 'Environment routing',
@@ -103,7 +103,7 @@ for (const reviewWorkflow of [false, true]) for (const prWaiting of [false, true
     assert.ok(text.includes('Checks 1, 4, 5, and 6 use the reviewWorkflow override'));
     assert.ok(text.includes('Restrictive guidance that requires ending the turn'));
     assert.ok(text.includes('Do not claim that this proxy fixes delegation deadlines or guarantees timers'));
-    assert.ok(text.includes('only when the installation works and all seven compatibility checks pass'));
+    assert.ok(text.includes('only when the installation works and all nine compatibility checks pass'));
     assert.ok(!text.includes('"Override checks (3):"'));
     assert.ok(text.includes('Do not give installation facts PASS labels or mix them into the compatibility list'));
     assert.ok(text.includes('Do not show raw counters'));

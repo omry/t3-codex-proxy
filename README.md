@@ -23,7 +23,8 @@ also need access to directories outside the normal project root.
 
 - Rewrites only known, version-specific T3 guidance and tool descriptions so
   the user's workflow controls review routing, continuity, fixer assignment,
-  delegate waits, PR waits, and browser versus API/CLI/connector selection.
+  delegate waits, PR waits, PR tool choice, device tool choice, and browser
+  versus API/CLI/connector selection.
 - Normalizes the known `next` waiting hint in identified waiting-tool replies
   and matching output-schema literals. Preserves task identity, status, timeout
   facts, input schemas, user input, and unrelated result data. Unknown guidance
@@ -68,16 +69,18 @@ The page writes a config with this shape:
     "reviewWorkflow": true,
     "prWaiting": true,
     "browserRouting": true,
-    "environmentRouting": true
+    "environmentRouting": true,
+    "prToolRouting": true,
+    "deviceRouting": true
   }
 }
 ```
 
 `additionalWritableRoots` is a list of absolute directories to add to
-workspace-write turns. The four overrides are independent and default to
+workspace-write turns. The six overrides are independent and default to
 `true`; set one to `false` to leave that category of T3 guidance unchanged.
-The diagnostic reports seven checks because `reviewWorkflow` controls four of
-them; `prWaiting`, `browserRouting`, and `environmentRouting` control one each.
+The diagnostic reports nine checks because `reviewWorkflow` controls four of
+them; each of the other five switches controls one check.
 Valid changes to roots and overrides apply to later turns while the proxy is
 running. Changing `realCodex` requires restarting T3.
 

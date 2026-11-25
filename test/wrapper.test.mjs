@@ -153,7 +153,7 @@ async function launchIsolatedPublic(t, realCodex, args = ['app-server'], config 
   await mkdir(path.join(root, 'bin'), { recursive: true });
   await mkdir(path.join(root, 'src'), { recursive: true });
   for (const file of ['bin/t3-codex-proxy.mjs', 'src/config.mjs', 'src/configure.mjs', 'src/framing.mjs',
-    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/compatibility.mjs', 'src/diagnostics.mjs', 'src/wrapper.mjs']) {
+    'src/mcp-proxy.mjs', 'src/policy.mjs', 'src/routing.mjs', 'src/compatibility.mjs', 'src/diagnostics.mjs', 'src/wrapper.mjs']) {
     await copyFile(file, path.join(root, file));
   }
   await chmod(path.join(root, 'bin/t3-codex-proxy.mjs'), 0o755);

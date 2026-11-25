@@ -5,7 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
-export const DEFAULT_OVERRIDES = Object.freeze({ reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true });
+export const DEFAULT_OVERRIDES = Object.freeze({ reviewWorkflow: true, prWaiting: true, browserRouting: true, environmentRouting: true,
+  prToolRouting: true, deviceRouting: true });
 export const DEFAULT_ADDITIONAL_WRITABLE_ROOTS = Object.freeze([]);
 
 function defaultConfigDirectory(env = process.env) {
