@@ -140,6 +140,55 @@ test('proxy-check no longer detects the repaired waiting metadata and still requ
   const listed = await (await request('POST', { jsonrpc: '2.0', id: 20, method: 'tools/list' })).json();
   assert.notEqual(listed.result.tools[0].outputSchema.properties.next.const, waitFixture.tools[0].outputSchema.properties.next.const);
   assert.notEqual(listed.result.tools[2].description, waitFixture.tools[2].description);
+  assert.deepEqual(evidence.tools, listed.result.tools.slice(0, 3).map(tool => ({
+    name: tool.name, description: tool.description, outputSchema: tool.outputSchema ?? null,
+  })));
+  assert.ok(text.includes(JSON.stringify(evidence.tools)));
+});
+
+test('waiting diagnostic exposes unfamiliar schema instructions for inspection without implying a pass', () => {
+  const outputSchema = {
+    allOf: [{ properties: { next: { description: 'An unfamiliar waiting instruction.', type: 'string' } } }],
+    $defs: { task: { properties: { waitTimedOut: { type: 'boolean' } } } },
+  };
+  const tool = { name: 'delegate_task', description: 'Follow the workflow when waiting.', outputSchema,
+    inputSchema: { privateMarker: 'unrelated input' }, annotations: { privateMarker: 'unrelated annotation' } };
+  const metadata = { tools: [tool, { name: 'other', description: 'unrelated tool' }], privateMarker: 'unrelated response' };
+  const original = structuredClone(metadata);
+  const result = proxyCheckResult(createPolicy('0.1.3').diagnostics(), metadata);
+  const evidence = result.structuredContent.delegateWaitingEvidence;
+  assert.equal(evidence.status, 'unknown');
+  assert.deepEqual(evidence.tools, [{ name: tool.name, description: tool.description, outputSchema }]);
+  assert.deepEqual(evidence.missingTools, ['task_status', 't3_thread_wait']);
+  assert.deepEqual(metadata, original);
+  assert.ok(result.content[0].text.includes(JSON.stringify(evidence.tools)));
+  assert.ok(!JSON.stringify(result).includes('privateMarker'));
+  assert.ok(!JSON.stringify(result).includes('unrelated tool'));
+});
+
+test('waiting diagnostic distinguishes absent output schemas from unavailable tool metadata', () => {
+  const policy = createPolicy('0.1.3');
+  const tool = { name: 't3_thread_wait', description: 'Follow the workflow when waiting.' };
+  const complete = proxyCheckResult(policy.diagnostics(), { tools: [tool] });
+  const evidence = complete.structuredContent.delegateWaitingEvidence;
+  assert.deepEqual(evidence.tools, [{ ...tool, outputSchema: null }]);
+  assert.ok(!evidence.missingTools.includes(tool.name));
+  assert.equal(evidence.listComplete, true);
+  const unavailable = proxyCheckResult(policy.diagnostics());
+  assert.deepEqual(unavailable.structuredContent.delegateWaitingEvidence.tools, []);
+  assert.equal(unavailable.structuredContent.delegateWaitingEvidence.listComplete, false);
+  assert.ok(unavailable.structuredContent.delegateWaitingEvidence.missingTools.includes(tool.name));
+  const partial = proxyCheckResult(policy.diagnostics(), { tools: [tool], nextCursor: 'more' });
+  assert.equal(partial.structuredContent.delegateWaitingEvidence.listComplete, false);
+  const missingDescription = proxyCheckResult(policy.diagnostics(), { tools: [{ name: tool.name }] });
+  assert.equal(missingDescription.structuredContent.delegateWaitingEvidence.tools[0].description, null);
+  assert.ok(missingDescription.structuredContent.delegateWaitingEvidence.missingTools.includes(tool.name));
+  for (const result of [complete, unavailable, partial, missingDescription]) {
+    assert.equal(result.structuredContent.delegateWaitingEvidence.status, 'unknown');
+    const text = result.content[0].text;
+    assert.ok(text.includes('outputSchema: null means upstream defines no output schema'));
+    assert.ok(text.includes('does not prove the same metadata reached the direct tool definitions'));
+  }
 });
 
 test('proxy-check still fails when a conflicting schema is outside the supported rewrite shape', async t => {
@@ -152,6 +201,7 @@ test('proxy-check still fails when a conflicting schema is outside the supported
   const response = await (await request('POST', { jsonrpc: '2.0', id: 22, method: 'tools/call',
     params: { name: 'proxy-check', arguments: {} } })).json();
   assert.equal(response.result.structuredContent.delegateWaitingEvidence.status, 'fail');
+  assert.deepEqual(response.result.structuredContent.delegateWaitingEvidence.tools[0].outputSchema, tools[0].outputSchema);
   assert.ok(response.result.content[0].text.includes('Delegate waiting and recovery: FAIL'));
 });
 
@@ -176,6 +226,9 @@ test('disabled waiting override reports preserved conflicts without failing pass
   const evidence = response.result.structuredContent.delegateWaitingEvidence;
   assert.equal(evidence.status, 'disabled');
   assert.equal(evidence.findings.length, 3);
+  assert.deepEqual(evidence.tools, waitFixture.tools.map(tool => ({
+    name: tool.name, description: tool.description, outputSchema: tool.outputSchema ?? null,
+  })));
   assert.ok(!response.result.content[0].text.includes('Delegate waiting and recovery: FAIL'));
 });
 

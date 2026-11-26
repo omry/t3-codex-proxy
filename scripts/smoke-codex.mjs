@@ -93,7 +93,8 @@ const server = http.createServer(async (request, response) => {
   };
   if (message.method === 'initialize') return reply({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'isolated-fake-t3', version: '1' } });
   if (message.method === 'tools/list') return reply({ tools: [
-    { name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object', properties: {} } },
+    { name: 'delegate_task', description: fixture.delegate_task, inputSchema: { type: 'object', properties: {} },
+      outputSchema: { ...waitingFixture.tools[0].outputSchema, $comment: 'Isolated waiting schema evidence.' } },
     { name: 't3_thread_send', description: fixture.t3_thread_send, inputSchema: { type: 'object', properties: {} } },
     { name: 'watch_pull_request', description: fixture.watch_pull_request, inputSchema: { type: 'object', properties: {} } },
     { name: 'task_status', description: delegateWaitFixture.task_status,
@@ -287,6 +288,10 @@ requires_openai_auth = false
   assert.ok(diagnosticText.includes('Proxy check passed.'));
   assert.ok(diagnosticText.includes('Compatibility checks (9):'));
   assert.ok(diagnosticText.includes('Delegate waiting and recovery'));
+  assert.ok(diagnosticText.includes('Effective waiting-tool metadata'));
+  assert.ok(diagnosticText.includes('Isolated waiting schema evidence.'),
+    'The full waiting output schema reaches the next real-Codex inference through the diagnostic');
+  assert.ok(diagnosticText.includes('outputSchema: null means upstream defines no output schema'));
   assert.ok(diagnosticText.includes('Environment routing'));
   assert.ok(diagnosticText.includes(`Browser-routing override: ${overrides.browserRouting ? 'enabled' : 'disabled'}`));
   assert.ok(methods.includes('initialize') && methods.includes('tools/list'));
