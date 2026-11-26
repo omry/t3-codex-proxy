@@ -1,5 +1,35 @@
 # Verification
 
+## Waiting-tool diagnostic evidence; verified locally
+
+Verified locally on 2026-11-27. The running diagnostic on T3
+`0.1.13-nightly.20261126.5305` had a complete waiting-tool list and no known
+conflicts, but did not return the schemas needed for agent inspection. The
+direct tool definitions exposed to the agent did not show those schemas.
+
+The diagnostic now returns the effective descriptions and complete output
+schemas for the three waiting tools in its text and in
+`delegateWaitingEvidence.tools`. These are observations from the authenticated
+tool list after proxy rewrites. `outputSchema: null` records that upstream
+defines no schema; missing tools, missing descriptions, and partial lists remain
+distinct. Known conflicts still fail, and conflict-free metadata still requires
+agent inspection of the evidence and received guidance before PASS.
+
+Both new regressions failed before implementation. All 290 tests, syntax checks,
+and the package dry run passed afterward. Real-Codex 0.172.0 smoke checks with
+enabled and disabled overrides verified that schema evidence reaches the next
+inference through the diagnostic. They used isolated fake model and MCP servers,
+the composite nightly 5245 fixture, and advertised nightly 5305; they did not
+exercise live delegation. Review covered metadata preservation, unfamiliar and
+nested schema instructions, disabled passthrough, missing evidence, and direct
+tool delivery limits.
+
+This is a local diagnostic truth fix: it exposes previously unavailable evidence
+without relaxing the pass criteria. A subsequent live diagnostic still lacked
+the new `tools` field, so the running proxy has not loaded this change. Live
+verification remains pending a coordinated reload. No restart or publication
+was performed for this checkpoint.
+
 ## PR tool choice, device tool choice, and environment-link descriptions
 
 Verified locally on 2026-11-26 against partial source captures from installed

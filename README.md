@@ -113,6 +113,14 @@ Open a conversation with that provider and send:
 proxy-check
 ```
 
+For waiting tools, the diagnostic includes the effective descriptions and full
+output schemas in its text and in `delegateWaitingEvidence.tools`. These come
+from the authenticated upstream tool list after proxy rewrites. An
+`outputSchema` value of `null` means upstream defines no output schema; a missing
+tool or description leaves evidence unavailable. The agent must inspect this
+evidence and the guidance it received before reporting PASS. The snapshot alone
+does not prove that the direct tool definitions received the same metadata.
+
 The diagnostic checks the T3 connection, compatibility guidance, MCP
 connectivity, and every configured writable directory. A directory is green
 only when both the proxy process and the Codex turn can create and delete a
