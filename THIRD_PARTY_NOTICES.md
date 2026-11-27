@@ -12,6 +12,10 @@ The environment-routing strings in `src/policy.mjs` and
 `test/fixtures/t3-environment-guidance-4774.json` also derive from T3 Code
 `v0.1.10-nightly.20261116.4774`, captured from live developer guidance.
 
+The device-routing variant in `src/routing.mjs` and
+`test/fixtures/t3-guidance-5305.json` derive from T3 Code
+`v0.1.13-nightly.20261126.5305`, captured from the installed AppImage.
+
 T3 Code's MIT notice is reproduced below. This project does not bundle T3 Code
 or the Codex CLI.
 

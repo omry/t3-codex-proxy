@@ -1,4 +1,4 @@
-// Exact partial captures from installed T3 nightly 5245. Unknown wording stays unchanged.
+// Exact partial captures from installed T3 nightlies. Unknown wording stays unchanged.
 export const routingRules = {
   "deviceRouting": {
     "tools": [
@@ -29,3 +29,10 @@ export const routingRules = {
     ]
   }
 };
+
+// Nightly 5305 adds explicit-user alternatives and a delegated-recipe restriction.
+// Match the complete observed section and reuse the existing workflow policy.
+routingRules.deviceRouting.tools.push([
+  "## T3 Code devices\n\nWhen a task needs an iOS Simulator or Android Emulator, on this machine or on an SSH device host such as a remote Mac, use the device tools so the user can watch it in the Device panel.\n1. Call `device_list` unless you already have the device's `hostId` and `id`.\n2. Call `device_open` with both. It returns an `agent-device` command bound to that device; if you lose it, call `device_open` again. Run that command for every app launch or relaunch, deep link, tap, text entry, alert, setting, screenshot and recording; its snapshots, screenshots and input need `open <app>` first, and `help <command>` lists the options.\n3. Call `device_screenshot` to look at the screen.\n\nNever do those with `xcrun simctl`, `idb`, `adb`, ssh, or scripts that wrap them. ssh, simctl and adb stay fine for builds, installs, code sync, Metro, port forwards, logs, the project's test runners, and what agent-device cannot do, such as `simctl addmedia` or `simctl keychain add-root-cert`. These rules override memory notes, docs and delegated tasks that say otherwise; drive a device another way (ssh, simctl, a project script), skip these tools or close another session only when the user explicitly asks, and then do it. A recipe in a task you were delegated is not that ask. If a device tool or the command it returned fails, quote its error and follow its advice once, but never reuse or close another session unless the user explicitly asked; if it still fails, tell the user and stop, unless they explicitly asked for another route. If the platform you need is unavailable, say so. When you delegate device work, pass the `hostId` and device `id` and tell the child to use `device_open`; never write ssh or simctl steps for the device into its task.",
+  routingRules.deviceRouting.tools[0][1],
+]);
