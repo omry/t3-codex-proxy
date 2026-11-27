@@ -1,5 +1,58 @@
 # Verification
 
+## Nightly 5305 matcher audit; device fix activated
+
+Verified locally on 2026-11-28 with T3 `0.1.13-nightly.20261126.5305` and
+Codex 0.172.0. The new fixture captures the exact orchestration sections,
+browser and device guidance, PR block, and selected tool descriptions from the
+installed AppImage, with its SHA-256 recorded. Tool schemas and waiting results
+were not recaptured in this fixture, so the version remains assumed compatible.
+
+The source comparison found one unmatched surface: T3 changed the device
+section's explicit-user exceptions and delegated-recipe restriction. The proxy
+still matched only the 5245 section, so it preserved the new conflicting device
+guidance. Review context, reviewer continuity, fixer assignment, delegate waits,
+browser routing, environment routing, PR waiting, PR-tool routing, and the
+selected tool descriptions still matched. The installed waiting-result hint
+also matches an existing normalization rule.
+
+The repair adds an exact whole-section match for the observed 5305 device text
+and reuses the existing workflow-controlled replacement. The 5245 variant remains
+supported. Unknown wording stays unchanged with a content-free warning. This is
+a local guidance truth fix: it changes the conflicting instructions rather than
+relaxing the diagnostic's claims.
+
+The captured-source regression failed on the device section before the repair
+and passed afterward. All 293 tests, syntax checks, and the package dry run pass.
+Real-Codex smoke checks with enabled and disabled overrides pass using this
+fixture. They verify initial context, tagged reinjection, tool descriptions,
+and diagnostic delivery at isolated fake model/MCP endpoints. The changed device
+guidance reaches inference when enabled and stays unchanged when disabled.
+No live device was operated.
+
+The subsequent live `proxy-check` remained connected on nightly 5305. The
+current received developer context contains all three review rules previously
+reported UNKNOWN. Inspection of the received guidance, effective waiting
+schemas, and exposed tool descriptions supports all nine current compatibility
+checks. Both proxy-process access and the current-turn create/delete check pass
+for `/home/omry/.local/state/awd`.
+
+After the user approved activation on 2026-11-28, the T3-managed shared Codex
+wrapper PID 2125135 received SIGTERM and exited. T3 started replacement wrappers
+4091968 and 4093994 from this checkout after the matcher file changed. The
+post-restart live diagnostic reconnected and passed all nine current instruction
+checks after inspection of received guidance and tool metadata. The writable-root
+create/delete check passed again. The one-time continuation task was disabled
+after it ran. AWD run `run_67kp2jmh9qn8s4sr53j7n4tnty` records this activation.
+
+Device developer guidance is inactive in this live conversation. The live check
+therefore covers its exposed tool descriptions, not the new device-section
+substitution. The repair is loaded, but delivery of the changed device section
+was verified only through the isolated real-Codex smoke. No live device was
+operated, and the inactive capability was not enabled for this check. No
+publication occurred. The earlier review-context omission was not reproduced as
+a matcher failure; the device repair addresses a separate confirmed mismatch.
+
 ## Waiting-tool diagnostic evidence; verified locally
 
 Verified locally on 2026-11-27. The running diagnostic on T3
@@ -24,11 +77,12 @@ exercise live delegation. Review covered metadata preservation, unfamiliar and
 nested schema instructions, disabled passthrough, missing evidence, and direct
 tool delivery limits.
 
-This is a local diagnostic truth fix: it exposes previously unavailable evidence
-without relaxing the pass criteria. A subsequent live diagnostic still lacked
-the new `tools` field, so the running proxy has not loaded this change. Live
-verification remains pending a coordinated reload. No restart or publication
-was performed for this checkpoint.
+This is a diagnostic truth fix: it exposes previously unavailable evidence
+without relaxing the pass criteria. At the original checkpoint, a subsequent
+live diagnostic still lacked the new `tools` field and verification remained
+pending a coordinated reload. The 2026-11-28 activation above subsequently
+confirmed the effective descriptions and complete schemas in the live
+diagnostic. No publication was performed.
 
 ## PR tool choice, device tool choice, and environment-link descriptions
 

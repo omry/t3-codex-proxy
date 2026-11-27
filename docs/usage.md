@@ -209,8 +209,8 @@ supported wait and recovery operations. The proxy does not implement those
 operations or guarantee wall-clock deadlines. The `prWaiting` switch applies
 to PR waits and does not control delegate waits.
 
-The `deviceRouting` override replaces the exact device section captured from
-nightly 5245 and its `device_open` and `device_screenshot` descriptions. The
+The `deviceRouting` override replaces the exact device sections captured from
+nightlies 5245 and 5305 and their `device_open` and `device_screenshot` descriptions. The
 workflow chooses device tools and recovery. Without a selection, T3 tools remain
 the default. T3 sessions stay pinned; another session must never be reused or
 closed. Device instructions may be absent when the capability is unavailable.
