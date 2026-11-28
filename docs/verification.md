@@ -1,5 +1,42 @@
 # Verification
 
+## Post-upgrade nightly 5372 check
+
+Verified locally on 2026-11-28 after the user updated and restarted T3 to
+`0.1.14-nightly.20261128.5372`. The installed AppImage SHA-256 is
+`ffdf7ae8a13ce6725e33e1861c12b88761932d4f77061d94768dff201cec1f37`,
+matching the official release asset. The staged 5359 activation script was not
+run. The user reported a passing live `proxy-check` after the update.
+
+Inspection of the installed 5372 bundle found the same orchestration sections,
+browser guidance, device section, PR block, and eight selected tool descriptions
+as the 5305 capture. Enabled and disabled real-Codex smoke checks passed with
+that byte-identical guidance advertised as 5372. No further matcher repair was
+needed. The version remains assumed compatible because complete exact-version
+tool schemas and waiting results were not captured.
+
+The current live diagnostic connects successfully. Received review, waiting,
+browser, environment, and PR guidance and exposed tool descriptions remain
+consistent with the workflow-controlled policy. The effective waiting-tool
+schemas contain no conflicting instruction. Both the proxy-process check and
+the current-turn create/delete check pass for `/home/omry/.local/state/awd`.
+
+Agent device access was initially off. With the user's approval, a temporary
+project-only override was enabled and a new turn was queued in this conversation.
+The device developer paragraph was still absent from the received context on
+that turn. The prior project setting was then restored, with the global setting
+unchanged. This first attempt did not establish live paragraph delivery.
+
+The user then approved one fresh temporary T3 verification thread. With the same
+project-only access override enabled, that fresh thread received the corrected
+device paragraph. It quoted the complete received section and confirmed workflow
+control of tool choice and recovery, with no unconditional T3-only restriction.
+The `device_open` and `device_screenshot` descriptions agreed. Its live diagnostic
+connected on nightly 5372. The project access setting was restored to its exact
+prior state and the temporary thread was archived after completion. This verifies
+live delivery of the repaired guidance. No device was operated or device behavior
+tested, and nothing was published.
+
 ## Nightly 5305 matcher audit; device fix activated
 
 Verified locally on 2026-11-28 with T3 `0.1.13-nightly.20261126.5305` and
